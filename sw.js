@@ -1,7 +1,7 @@
 // Service worker: makes the app work offline.
 // Strategy: serve from cache immediately, refresh the cache in the background
 // (so an update you publish shows up the next time the app is opened).
-const CACHE = 'signcards-v1';
+const CACHE = 'signcards-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ const ASSETS = [
   './js/study.js',
   './js/importer.js',
   './js/backup.js',
+  './js/zip.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',

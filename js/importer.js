@@ -19,6 +19,20 @@ export function parseSignName(filename) {
   return n.charAt(0).toUpperCase() + n.slice(1);
 }
 
+export const isVideoName = (name) => !name.startsWith('.') && Object.hasOwn(TYPES, (name.split('.').pop() || '').toLowerCase());
+
+/** True for zip entries that are real videos (not macOS "__MACOSX/._x.mp4" metadata). */
+export const isVideoEntry = (path) => !path.split('/').includes('__MACOSX') && isVideoName(path.split('/').pop());
+
+/** "Alphabet-20261105T101500Z-001.zip" (Google Drive folder download) → "Alphabet" */
+export function deckNameFromZip(filename) {
+  let n = filename.replace(/\.zip$/i, '');
+  n = n.replace(/\s*\(\d+\)$/, '');
+  n = n.replace(/-\d{8}T\d{6}Z-\d{3}$/, '');
+  n = n.replace(/\s+/g, ' ').trim();
+  return n || filename;
+}
+
 export function videoType(file) {
   if (file.type) return file.type;
   const ext = (file.name.split('.').pop() || '').toLowerCase();

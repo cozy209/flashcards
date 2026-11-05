@@ -1,7 +1,8 @@
 import * as db from './db.js';
 import { Session, deckCounts } from './study.js';
 import { formatDuration } from './srs.js';
-import { ACCEPT, parseSignName, videoType, naturalCompare } from './importer.js';
+import { ACCEPT, parseSignName, videoType, naturalCompare, isVideoEntry, deckNameFromZip } from './importer.js';
+import { readZip, ZipError } from './zip.js';
 import { buildExport, shareOrDownload, importProgress } from './backup.js';
 
 const app = document.getElementById('app');
@@ -335,9 +336,12 @@ async function viewImport(ctx, [deckId]) {
         <input id="newName" placeholder="e.g. Alphabet" autocomplete="off">
       </label>
       <input type="file" id="file" multiple accept="${ACCEPT}" hidden>
+      <input type="file" id="zipFile" accept=".zip,application/zip" hidden>
       <button type="button" class="btn block" id="pick">Choose videos…</button>
+      <button type="button" class="btn block" id="pickZip">Import collection from .zip…</button>
       <p class="hint">On iPhone, tap <b>Choose Files</b> (or <b>Browse</b>), open <b>Google Drive</b> or <b>Downloads</b>, tap <b>Select</b> and pick all videos of one collection.
         Avoid the Photo Library: it renames videos. You can pick more than once to add more files.</p>
+      <p class="hint">Or pick a <b>.zip</b> of the collection: the deck is named after the zip file.</p>
       <div id="preview"></div>
     </main>`;
 
@@ -422,6 +426,41 @@ async function viewImport(ctx, [deckId]) {
     renderPreview();
   });
 
+  $('#pickZip').addEventListener('click', () => $('#zipFile').click());
+  $('#zipFile').addEventListener('change', async (e) => {
+    const zip = e.target.files[0];
+    e.target.value = '';
+    if (!zip || busy) return;
+    let entries;
+    try {
+      entries = await readZip(zip);
+    } catch (err) {
+      console.error(err);
+      return alert(`Couldn't open “${zip.name}”. ${err instanceof ZipError ? err.message : 'Is it a valid zip file?'}`);
+    }
+    const videos = entries.filter((en) => isVideoEntry(en.path));
+    if (!videos.length) return alert(`“${zip.name}” doesn't contain any videos (.mp4, .mov, .m4v, .webm, .3gp).`);
+    const locked = videos.filter((v) => v.encrypted).length;
+    if (locked) toast(`${plural(locked, 'video')} skipped: password-protected`);
+
+    // The collection takes the zip's name: reuse that deck if it exists, else create it.
+    const deckName = deckNameFromZip(zip.name);
+    const match = decks.find((d) => d.name.toLowerCase() === deckName.toLowerCase());
+    deckSel.value = match ? String(match.id) : 'new';
+    $('#newName').value = match ? '' : deckName;
+    syncNewWrap();
+    await loadExisting();
+
+    items.length = 0; // a zip is one collection, so it replaces any earlier picks
+    for (const file of videos) {
+      if (file.encrypted) continue;
+      items.push({ file, name: parseSignName(file.name), checked: true, fresh: true });
+    }
+    items.sort((a, b) => naturalCompare(a.name, b.name));
+    renderPreview();
+    toast(match ? `Adding to existing deck “${match.name}”` : `New deck “${deckName}”`);
+  });
+
   async function runImport() {
     if (busy) return;
     let deck;
@@ -436,7 +475,7 @@ async function viewImport(ctx, [deckId]) {
 
     const selected = items.filter((i) => i.checked && i.name.trim());
     busy = true;
-    $$('#preview input, #pick, #deck, #newName').forEach((el) => (el.disabled = true));
+    $$('#preview input, #pick, #pickZip, #deck, #newName').forEach((el) => (el.disabled = true));
     $('#go').disabled = true;
     $('#progress').hidden = false;
     const bar = $('#progress progress');

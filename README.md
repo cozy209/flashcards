@@ -34,6 +34,8 @@ Only the app code goes on GitHub. Your videos stay on your phone.
 3. Tap **Choose videos… → Choose Files / Browse → Google Drive**, open the collection folder, tap **Select**, select all, then **Open**.
 4. Check the sign names (you can edit them) and tap **Import**. The videos are copied onto the phone, so Drive isn't needed afterwards.
 
+**Or import a whole collection as a .zip.** Tap **Import videos → Import collection from .zip…** and pick the zip. The deck is named after the zip file (`Alphabet.zip` → "Alphabet"). If a deck with that name already exists, the videos are added to it. Google Drive's *Download* on a folder makes a zip like `Alphabet-20261105T101500Z-001.zip`, and the date part is dropped from the name. Videos in subfolders are included.
+
 Avoid importing from the Photo Library: iOS renames those videos to `IMG_1234`.
 
 Supported formats: `.mp4`, `.mov`, `.m4v` (best on iPhone); `.webm` only on recent iOS versions.
@@ -61,6 +63,7 @@ Upload the changed files to the GitHub repository again. The app updates in the 
 ```sh
 python3 -m http.server 8000   # then open http://localhost:8000
 node tests/srs.test.mjs       # scheduling tests
+node tests/zip.test.mjs       # zip import tests
 ```
 
-No build step and no dependencies. The code is in `js/`: `app.js` (screens), `db.js` (IndexedDB storage), `srs.js` (scheduling), `study.js` (session queue), `importer.js`, `backup.js`.
+No build step and no dependencies. The code is in `js/`: `app.js` (screens), `db.js` (IndexedDB storage), `srs.js` (scheduling), `study.js` (session queue), `importer.js`, `zip.js` (zip reader), `backup.js`.
