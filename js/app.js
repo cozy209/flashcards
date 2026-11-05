@@ -93,7 +93,7 @@ const players = new Set();
 function createPlayer(signId) {
   const wrap = document.createElement('div');
   wrap.className = 'player';
-  wrap.innerHTML = `<video playsinline webkit-playsinline muted loop autoplay preload="auto"></video>
+  wrap.innerHTML = `<div class="video-box"><video playsinline webkit-playsinline muted loop autoplay preload="auto"></video></div>
     <div class="player-controls">
       <button type="button" class="chip" data-act="replay">↺ Rejouer</button>
       <button type="button" class="chip" data-act="speed"></button>
@@ -125,7 +125,7 @@ function createPlayer(signId) {
   db.get('videos', signId).then((rec) => {
     if (destroyed) return;
     if (!rec) {
-      video.replaceWith(Object.assign(document.createElement('div'), { className: 'no-video', textContent: 'Vidéo introuvable' }));
+      video.parentElement.replaceWith(Object.assign(document.createElement('div'), { className: 'no-video', textContent: 'Vidéo introuvable' }));
       return;
     }
     const blob = rec.data instanceof Blob ? rec.data : new Blob([rec.data], { type: rec.type || 'video/mp4' });
@@ -507,6 +507,8 @@ async function viewStudy(ctx, _args, params) {
   if (!ctx.alive()) return;
   const back = ids.length === 1 && p !== 'all' ? `#/deck/${ids[0]}` : '#/';
 
+  document.documentElement.classList.add('no-scroll');
+  cleanups.push(() => document.documentElement.classList.remove('no-scroll'));
   app.innerHTML = `
     <div class="study">
       <header class="bar">
