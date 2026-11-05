@@ -22,11 +22,11 @@ export async function buildExport() {
 }
 
 export async function shareOrDownload(data) {
-  const name = `sign-cards-progress-${new Date().toISOString().slice(0, 10)}.json`;
+  const name = `flashcards-progression-${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
   if (navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: 'Sign Cards progress' });
+      await navigator.share({ files: [file], title: 'Progression Flashcards' });
       return;
     } catch (e) {
       if (e.name === 'AbortError') return;
@@ -42,7 +42,7 @@ export async function shareOrDownload(data) {
 
 /** Applies progress to matching cards; unmatched entries wait in `pending` until their video is imported. */
 export async function importProgress(json) {
-  if (json?.app !== 'signcards' || !Array.isArray(json.cards)) throw new Error('This is not a Sign Cards backup file.');
+  if (json?.app !== 'signcards' || !Array.isArray(json.cards)) throw new Error('Ce n\'est pas un fichier de sauvegarde Flashcards.');
 
   for (const d of json.decks || []) {
     if (!d.name) continue;

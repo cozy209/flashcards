@@ -1,6 +1,6 @@
 // A study session: decides which card comes next and records answers.
 import * as db from './db.js';
-import { schedule, dayStart, nextLabel, LEARN_AHEAD, DAY } from './srs.js';
+import { schedule, dayStart, LEARN_AHEAD, DAY } from './srs.js';
 
 const isLearning = (c) => c.state === 'learning' || c.state === 'relearning';
 const modeRank = (m) => (m === 'video2word' ? 0 : 1);
@@ -113,9 +113,6 @@ export class Session {
     };
   }
 
-  preview(card, now = Date.now()) {
-    return [1, 2, 3, 4].map((r) => nextLabel(card, r, now));
-  }
 
   async answer(card, rating, now = Date.now()) {
     const before = { ...card };

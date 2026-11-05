@@ -326,7 +326,7 @@ input:focus, select:focus, .btn:focus-visible { outline: 2px solid var(--primary
   background: linear-gradient(to top, var(--bg) 75%, transparent);
 }
 .actions .btn.block { margin-top: 0; }
-.ratings { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+.ratings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
 .rate {
   display: flex;
   flex-direction: column;
@@ -341,11 +341,9 @@ input:focus, select:focus, .btn:focus-visible { outline: 2px solid var(--primary
   cursor: pointer;
 }
 .rate:active { transform: scale(0.97); }
-.rate .ivl { font-size: 0.75rem; font-weight: 500; opacity: 0.9; }
 .r1 { background: var(--again); }
 .r2 { background: var(--hard); }
 .r3 { background: var(--good); }
-.r4 { background: var(--easy); }
 
 .done { text-align: center; margin: auto 0; padding: 2rem 1rem; }
 .done-icon { font-size: 3rem; }

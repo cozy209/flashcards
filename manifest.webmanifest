@@ -1,7 +1,8 @@
 {
-  "name": "Sign Cards",
-  "short_name": "Sign Cards",
-  "description": "Offline flashcards for learning sign language from your own videos.",
+  "name": "Flashcards",
+  "short_name": "Flashcards",
+  "lang": "fr",
+  "description": "Flashcards hors ligne pour apprendre la langue des signes avec vos propres vidéos.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

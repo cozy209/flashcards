@@ -26,7 +26,7 @@ export async function readZip(blob) {
   for (let i = tail.byteLength - 22; i >= 0; i--) {
     if (tail.getUint32(i, true) === EOCD) { eocd = i; break; }
   }
-  if (eocd < 0) throw new ZipError('Not a zip file');
+  if (eocd < 0) throw new ZipError('Ce n\'est pas un fichier zip.');
 
   let count = tail.getUint16(eocd + 10, true);
   let cdSize = tail.getUint32(eocd + 12, true);
@@ -34,10 +34,10 @@ export async function readZip(blob) {
 
   if (count === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
     const loc = eocd - 20;
-    if (loc < 0 || tail.getUint32(loc, true) !== ZIP64_LOCATOR) throw new ZipError('Broken Zip64 file');
+    if (loc < 0 || tail.getUint32(loc, true) !== ZIP64_LOCATOR) throw new ZipError('Fichier Zip64 endommagé.');
     const recOffset = u64(tail, loc + 8);
     const rec = await view(blob, recOffset, recOffset + 56);
-    if (rec.getUint32(0, true) !== ZIP64_EOCD) throw new ZipError('Broken Zip64 file');
+    if (rec.getUint32(0, true) !== ZIP64_EOCD) throw new ZipError('Fichier Zip64 endommagé.');
     count = u64(rec, 32);
     cdSize = u64(rec, 40);
     cdOffset = u64(rec, 48);
@@ -48,7 +48,7 @@ export async function readZip(blob) {
   const entries = [];
   let p = 0;
   for (let n = 0; n < count; n++) {
-    if (cd.getUint32(p, true) !== CENTRAL) throw new ZipError('Broken zip directory');
+    if (cd.getUint32(p, true) !== CENTRAL) throw new ZipError('Répertoire du zip endommagé.');
     const flags = cd.getUint16(p + 8, true);
     const method = cd.getUint16(p + 10, true);
     let compSize = cd.getUint32(p + 20, true);
@@ -90,12 +90,12 @@ export async function readZip(blob) {
 }
 
 async function extract(blob, { path, flags, method, compSize, localOffset }) {
-  if (flags & 1) throw new ZipError(`${path} is password-protected`);
+  if (flags & 1) throw new ZipError(`${path} est protégé par mot de passe.`);
   const local = await view(blob, localOffset, localOffset + 30);
-  if (local.getUint32(0, true) !== LOCAL) throw new ZipError(`Broken zip entry: ${path}`);
+  if (local.getUint32(0, true) !== LOCAL) throw new ZipError(`Entrée du zip endommagée : ${path}`);
   const start = localOffset + 30 + local.getUint16(26, true) + local.getUint16(28, true);
   const data = blob.slice(start, start + compSize);
   if (method === 0) return data.arrayBuffer();
   if (method === 8) return new Response(data.stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer();
-  throw new ZipError(`${path} uses an unsupported compression method (${method})`);
+  throw new ZipError(`${path} utilise une méthode de compression non prise en charge (${method}).`);
 }

@@ -6,7 +6,9 @@ import { readZip, ZipError } from './zip.js';
 import { buildExport, shareOrDownload, importProgress } from './backup.js';
 
 const app = document.getElementById('app');
-const MODES = { both: 'Both', video2word: 'Sign → Word', word2video: 'Word → Sign' };
+// Answer buttons → SRS rating (1 = again, 2 = hard, 3 = good).
+const RATINGS = [[1, 'À revoir'], [2, 'Difficile'], [3, 'Je sais']];
+const MODES = { both: 'Les deux', video2word: 'Signe → Mot', word2video: 'Mot → Signe' };
 
 // ---------- small helpers ----------
 
@@ -14,7 +16,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const $ = (sel, root = app) => root.querySelector(sel);
 const $$ = (sel, root = app) => [...root.querySelectorAll(sel)];
 const byName = (a, b) => naturalCompare(a.name, b.name);
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+// French: 0 and 1 are singular.
+const plural = (n, word, many = `${word}s`) => `${n} ${Math.abs(n) < 2 ? word : many}`;
 
 const ls = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -22,10 +25,11 @@ const ls = {
 };
 
 function bytes(n) {
-  if (!n) return '0 MB';
-  if (n < 1e6) return `${Math.max(1, Math.round(n / 1e3))} KB`;
-  if (n < 1e9) return `${(n / 1e6).toFixed(1)} MB`;
-  return `${(n / 1e9).toFixed(2)} GB`;
+  const dec = (x, d) => x.toFixed(d).replace('.', ',');
+  if (!n) return '0 Mo';
+  if (n < 1e6) return `${Math.max(1, Math.round(n / 1e3))} Ko`;
+  if (n < 1e9) return `${dec(n / 1e6, 1)} Mo`;
+  return `${dec(n / 1e9, 2)} Go`;
 }
 
 const svg = (d) => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -40,7 +44,7 @@ const ICON = {
 
 function header(title, { back, right } = {}) {
   return `<header class="bar">
-    ${back ? `<a class="icon-btn" href="${back}" aria-label="Back">${ICON.back}</a>` : '<span class="icon-btn"></span>'}
+    ${back ? `<a class="icon-btn" href="${back}" aria-label="Retour">${ICON.back}</a>` : '<span class="icon-btn"></span>'}
     <h1>${esc(title)}</h1>
     ${right || '<span class="icon-btn"></span>'}
   </header>`;
@@ -48,15 +52,15 @@ function header(title, { back, right } = {}) {
 
 function countsHtml(c) {
   return `<span class="counts">
-    <span class="c-new" title="New">${c.newCount}</span>
-    <span class="c-learn" title="Learning">${c.learnCount}</span>
-    <span class="c-due" title="To review">${c.reviewCount}</span>
+    <span class="c-new" title="Nouvelles">${c.newCount}</span>
+    <span class="c-learn" title="En apprentissage">${c.learnCount}</span>
+    <span class="c-due" title="À réviser">${c.reviewCount}</span>
   </span>`;
 }
 
 function modePicker() {
   const cur = ls.get('mode', 'both');
-  return `<div class="segmented" role="radiogroup" aria-label="Study mode">
+  return `<div class="segmented" role="radiogroup" aria-label="Mode d'étude">
     ${Object.entries(MODES).map(([k, v]) => `<button type="button" role="radio" data-mode="${k}" aria-checked="${k === cur}">${v}</button>`).join('')}
   </div>`;
 }
@@ -93,7 +97,7 @@ function createPlayer(signId) {
   wrap.className = 'player';
   wrap.innerHTML = `<video playsinline webkit-playsinline muted loop autoplay preload="auto"></video>
     <div class="player-controls">
-      <button type="button" class="chip" data-act="replay">↺ Replay</button>
+      <button type="button" class="chip" data-act="replay">↺ Rejouer</button>
       <button type="button" class="chip" data-act="speed"></button>
     </div>`;
   const video = $('video', wrap);
@@ -105,7 +109,7 @@ function createPlayer(signId) {
     const r = ls.get('rate', 1);
     video.defaultPlaybackRate = r;
     video.playbackRate = r;
-    speedBtn.textContent = `Speed ${r}×`;
+    speedBtn.textContent = `Vitesse ${String(r).replace('.', ',')}×`;
   };
   applyRate();
   video.addEventListener('loadedmetadata', applyRate);
@@ -123,7 +127,7 @@ function createPlayer(signId) {
   db.get('videos', signId).then((rec) => {
     if (destroyed) return;
     if (!rec) {
-      video.replaceWith(Object.assign(document.createElement('div'), { className: 'no-video', textContent: 'Video not found' }));
+      video.replaceWith(Object.assign(document.createElement('div'), { className: 'no-video', textContent: 'Vidéo introuvable' }));
       return;
     }
     const blob = rec.data instanceof Blob ? rec.data : new Blob([rec.data], { type: rec.type || 'video/mp4' });
@@ -163,7 +167,7 @@ async function route() {
     window.scrollTo(0, 0);
   } catch (err) {
     console.error(err);
-    if (ctx.alive()) app.innerHTML = `${header('Oops', { back: '#/' })}<main class="page"><p class="error">Something went wrong: ${esc(err.message)}</p></main>`;
+    if (ctx.alive()) app.innerHTML = `${header('Oups', { back: '#/' })}<main class="page"><p class="error">Une erreur s'est produite : ${esc(err.message)}</p></main>`;
   }
 }
 
@@ -175,7 +179,7 @@ async function viewDecks(ctx) {
   if (!ctx.alive()) return;
 
   app.innerHTML = `
-    ${header('Sign Cards', { right: `<a class="icon-btn" href="#/settings" aria-label="Settings">${ICON.gear}</a>` })}
+    ${header('Flashcards', { right: `<a class="icon-btn" href="#/settings" aria-label="Réglages">${ICON.gear}</a>` })}
     <main class="page">
       ${rows.length ? `
         <ul class="list">
@@ -183,22 +187,22 @@ async function viewDecks(ctx) {
             <li class="deck-item">
               <a class="deck-main" href="#/deck/${d.id}">
                 <span class="deck-name">${esc(d.name)}</span>
-                <span class="muted">${plural(n, 'sign')}</span>
+                <span class="muted">${plural(n, 'signe')}</span>
               </a>
               ${countsHtml(c)}
-              <a class="btn small primary" href="#/study?decks=${d.id}">Study</a>
+              <a class="btn small primary" href="#/study?decks=${d.id}">Étudier</a>
             </li>`).join('')}
         </ul>
-        <p class="legend"><span class="c-new">new</span> · <span class="c-learn">learning</span> · <span class="c-due">to review</span></p>
+        <p class="legend"><span class="c-new">nouvelles</span> · <span class="c-learn">en cours</span> · <span class="c-due">à réviser</span></p>
         ${modePicker()}
-        ${rows.length > 1 ? '<a class="btn primary block" href="#/study?decks=all">Study all decks</a>' : ''}
+        ${rows.length > 1 ? '<a class="btn primary block" href="#/study?decks=all">Étudier tous les paquets</a>' : ''}
       ` : `
         <div class="empty">
           <div class="empty-icon">🤟</div>
-          <h2>No decks yet</h2>
-          <p>Import a collection of sign videos. Each video's file name becomes the sign's name.</p>
+          <h2>Aucun paquet pour l'instant</h2>
+          <p>Importez une collection de vidéos de signes. Le nom de chaque fichier vidéo devient le nom du signe.</p>
         </div>`}
-      <a class="btn block" href="#/import">${ICON.plus} Import videos</a>
+      <a class="btn block" href="#/import">${ICON.plus} Importer des vidéos</a>
     </main>`;
   bindModePicker();
 }
@@ -214,13 +218,13 @@ async function viewDeck(ctx, [id]) {
   app.innerHTML = `
     ${header(deck.name, { back: '#/' })}
     <main class="page">
-      <div class="stat-row">${countsHtml(counts)}<span class="muted">${plural(signs.length, 'sign')}</span></div>
+      <div class="stat-row">${countsHtml(counts)}<span class="muted">${plural(signs.length, 'signe')}</span></div>
       ${modePicker()}
-      <a class="btn primary block" href="#/study?decks=${deck.id}">Study</a>
-      <a class="btn block" href="#/import/${deck.id}">${ICON.plus} Add videos</a>
+      <a class="btn primary block" href="#/study?decks=${deck.id}">Étudier</a>
+      <a class="btn block" href="#/import/${deck.id}">${ICON.plus} Ajouter des vidéos</a>
 
-      <h2 id="signsTitle">Signs (${signs.length})</h2>
-      <input type="search" id="search" placeholder="Search signs" autocomplete="off">
+      <h2 id="signsTitle">Signes (${signs.length})</h2>
+      <input type="search" id="search" placeholder="Rechercher un signe" autocomplete="off">
       <ul class="list sign-list" id="signs">
         ${signs.map((s) => `
           <li data-id="${s.id}" data-name="${esc(s.name.toLowerCase())}">
@@ -229,12 +233,12 @@ async function viewDeck(ctx, [id]) {
           </li>`).join('')}
       </ul>
 
-      <h2>Deck settings</h2>
-      <label class="field"><span>New signs per day</span>
+      <h2>Réglages du paquet</h2>
+      <label class="field"><span>Nouveaux signes par jour</span>
         <input type="number" id="npd" inputmode="numeric" min="0" max="999" value="${deck.newPerDay ?? 10}">
       </label>
-      <button type="button" class="btn block" id="rename">Rename deck</button>
-      <button type="button" class="btn danger block" id="delete">Delete deck</button>
+      <button type="button" class="btn block" id="rename">Renommer le paquet</button>
+      <button type="button" class="btn danger block" id="delete">Supprimer le paquet</button>
     </main>`;
   bindModePicker();
 
@@ -265,10 +269,10 @@ async function viewDeck(ctx, [id]) {
     detail.append(createPlayer(sign.id));
     detail.insertAdjacentHTML('beforeend', `
       <form class="inline-form">
-        <input name="name" value="${esc(sign.name)}" aria-label="Sign name" autocomplete="off">
-        <button class="btn small">Save</button>
+        <input name="name" value="${esc(sign.name)}" aria-label="Nom du signe" autocomplete="off">
+        <button class="btn small">Enregistrer</button>
       </form>
-      <button type="button" class="btn small danger" data-del>Delete sign</button>`);
+      <button type="button" class="btn small danger" data-del>Supprimer le signe</button>`);
     $('form', detail).addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const name = ev.target.name.value.trim();
@@ -277,16 +281,16 @@ async function viewDeck(ctx, [id]) {
       sign.name = name;
       $('.sign-name', li).textContent = name;
       li.dataset.name = name.toLowerCase();
-      toast('Renamed');
+      toast('Renommé');
     });
     $('[data-del]', detail).addEventListener('click', async () => {
-      if (!confirm(`Delete “${sign.name}” and its video?`)) return;
+      if (!confirm(`Supprimer « ${sign.name} » et sa vidéo ?`)) return;
       closeDetail(detail);
       await db.deleteSign(sign.id);
       signById.delete(sign.id);
       li.remove();
-      $('#signsTitle').textContent = `Signs (${signById.size})`;
-      toast('Sign deleted');
+      $('#signsTitle').textContent = `Signes (${signById.size})`;
+      toast('Signe supprimé');
     });
   });
 
@@ -295,23 +299,23 @@ async function viewDeck(ctx, [id]) {
     e.target.value = n;
     deck.newPerDay = n;
     await db.put('decks', deck);
-    toast('Saved');
+    toast('Enregistré');
   });
 
   $('#rename').addEventListener('click', async () => {
-    const name = prompt('Deck name', deck.name)?.trim();
+    const name = prompt('Nom du paquet', deck.name)?.trim();
     if (!name || name === deck.name) return;
     const other = await db.findDeckByName(name);
-    if (other && other.id !== deck.id) return toast('A deck with that name already exists');
+    if (other && other.id !== deck.id) return toast('Un paquet porte déjà ce nom');
     deck.name = name;
     await db.put('decks', deck);
     route();
   });
 
   $('#delete').addEventListener('click', async () => {
-    if (!confirm(`Delete “${deck.name}”, its ${plural(signs.length, 'video')} and all progress? This can't be undone.`)) return;
+    if (!confirm(`Supprimer « ${deck.name} », ${signs.length < 2 ? 'sa vidéo' : `ses ${signs.length} vidéos`} et toute la progression ? Cette action est irréversible.`)) return;
     await db.deleteDeck(deck.id);
-    toast('Deck deleted');
+    toast('Paquet supprimé');
     location.hash = '#/';
   });
 }
@@ -324,24 +328,24 @@ async function viewImport(ctx, [deckId]) {
   let busy = false;
 
   app.innerHTML = `
-    ${header('Import videos', { back: preselect ? `#/deck/${preselect.id}` : '#/' })}
+    ${header('Importer des vidéos', { back: preselect ? `#/deck/${preselect.id}` : '#/' })}
     <main class="page">
-      <label class="field"><span>Deck</span>
+      <label class="field"><span>Paquet</span>
         <select id="deck">
           ${decks.map((d) => `<option value="${d.id}" ${d === preselect ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
-          <option value="new" ${preselect ? '' : 'selected'}>+ New deck…</option>
+          <option value="new" ${preselect ? '' : 'selected'}>+ Nouveau paquet…</option>
         </select>
       </label>
-      <label class="field" id="newWrap"><span>New deck name</span>
-        <input id="newName" placeholder="e.g. Alphabet" autocomplete="off">
+      <label class="field" id="newWrap"><span>Nom du nouveau paquet</span>
+        <input id="newName" placeholder="ex. Alphabet" autocomplete="off">
       </label>
       <input type="file" id="file" multiple accept="${ACCEPT}" hidden>
       <input type="file" id="zipFile" accept=".zip,application/zip" hidden>
-      <button type="button" class="btn block" id="pick">Choose videos…</button>
-      <button type="button" class="btn block" id="pickZip">Import collection from .zip…</button>
-      <p class="hint">On iPhone, tap <b>Choose Files</b> (or <b>Browse</b>), open <b>Google Drive</b> or <b>Downloads</b>, tap <b>Select</b> and pick all videos of one collection.
-        Avoid the Photo Library: it renames videos. You can pick more than once to add more files.</p>
-      <p class="hint">Or pick a <b>.zip</b> of the collection: the deck is named after the zip file.</p>
+      <button type="button" class="btn block" id="pick">Choisir des vidéos…</button>
+      <button type="button" class="btn block" id="pickZip">Importer une collection (.zip)…</button>
+      <p class="hint">Sur iPhone, touchez <b>Choisir des fichiers</b> (ou <b>Parcourir</b>), ouvrez <b>Google Drive</b> ou <b>Téléchargements</b>, touchez <b>Sélectionner</b> et choisissez toutes les vidéos d'une collection.
+        Évitez la Photothèque : elle renomme les vidéos. Vous pouvez choisir plusieurs fois pour ajouter d'autres fichiers.</p>
+      <p class="hint">Ou choisissez le <b>.zip</b> d'une collection : le paquet prend le nom du fichier zip.</p>
       <div id="preview"></div>
     </main>`;
 
@@ -360,7 +364,7 @@ async function viewImport(ctx, [deckId]) {
     const seen = new Set();
     for (const it of items) {
       const key = it.name.trim().toLowerCase();
-      it.dup = existing.has(key) ? 'already in deck' : seen.has(key) ? 'duplicate' : '';
+      it.dup = existing.has(key) ? 'déjà dans le paquet' : seen.has(key) ? 'doublon' : '';
       if (it.checked) seen.add(key);
       if (it.fresh) { it.checked = !it.dup; it.fresh = false; if (it.checked) seen.add(key); }
     }
@@ -375,7 +379,7 @@ async function viewImport(ctx, [deckId]) {
     });
     const n = items.filter((i) => i.checked && i.name.trim()).length;
     const go = $('#go');
-    go.textContent = `Import ${plural(n, 'video')}`;
+    go.textContent = `Importer ${plural(n, 'vidéo')}`;
     go.disabled = !n || busy;
   }
 
@@ -383,14 +387,14 @@ async function viewImport(ctx, [deckId]) {
     computeDup();
     const total = items.reduce((s, i) => s + i.file.size, 0);
     $('#preview').innerHTML = items.length ? `
-      <h2>${plural(items.length, 'video')} <span class="muted">· ${bytes(total)}</span></h2>
-      <p class="hint">Check the names: this is what you'll be quizzed on.</p>
+      <h2>${plural(items.length, 'vidéo')} <span class="muted">· ${bytes(total)}</span></h2>
+      <p class="hint">Vérifiez les noms : c'est sur eux que vous serez interrogé.</p>
       <ul class="list import-list">
         ${items.map((it, i) => `
           <li data-i="${i}">
-            <input type="checkbox" ${it.checked ? 'checked' : ''} aria-label="Include">
+            <input type="checkbox" ${it.checked ? 'checked' : ''} aria-label="Inclure">
             <div class="import-main">
-              <input class="name" value="${esc(it.name)}" autocomplete="off" aria-label="Sign name">
+              <input class="name" value="${esc(it.name)}" autocomplete="off" aria-label="Nom du signe">
               <span class="muted small">${esc(it.file.name)} · ${bytes(it.file.size)} <span class="tag"></span></span>
             </div>
           </li>`).join('')}
@@ -436,12 +440,12 @@ async function viewImport(ctx, [deckId]) {
       entries = await readZip(zip);
     } catch (err) {
       console.error(err);
-      return alert(`Couldn't open “${zip.name}”. ${err instanceof ZipError ? err.message : 'Is it a valid zip file?'}`);
+      return alert(`Impossible d'ouvrir « ${zip.name} ». ${err instanceof ZipError ? err.message : 'Est-ce un fichier zip valide ?'}`);
     }
     const videos = entries.filter((en) => isVideoEntry(en.path));
-    if (!videos.length) return alert(`“${zip.name}” doesn't contain any videos (.mp4, .mov, .m4v, .webm, .3gp).`);
+    if (!videos.length) return alert(`« ${zip.name} » ne contient aucune vidéo (.mp4, .mov, .m4v, .webm, .3gp).`);
     const locked = videos.filter((v) => v.encrypted).length;
-    if (locked) toast(`${plural(locked, 'video')} skipped: password-protected`);
+    if (locked) toast(`${plural(locked, 'vidéo ignorée', 'vidéos ignorées')} : protégées par mot de passe`);
 
     // The collection takes the zip's name: reuse that deck if it exists, else create it.
     const deckName = deckNameFromZip(zip.name);
@@ -458,7 +462,7 @@ async function viewImport(ctx, [deckId]) {
     }
     items.sort((a, b) => naturalCompare(a.name, b.name));
     renderPreview();
-    toast(match ? `Adding to existing deck “${match.name}”` : `New deck “${deckName}”`);
+    toast(match ? `Ajout au paquet existant « ${match.name} »` : `Nouveau paquet « ${deckName} »`);
   });
 
   async function runImport() {
@@ -466,7 +470,7 @@ async function viewImport(ctx, [deckId]) {
     let deck;
     if (deckSel.value === 'new') {
       const name = $('#newName').value.trim();
-      if (!name) { toast('Enter a name for the new deck'); $('#newName').focus(); return; }
+      if (!name) { toast('Saisissez un nom pour le nouveau paquet'); $('#newName').focus(); return; }
       deck = await db.findDeckByName(name);
       if (!deck) deck = await db.get('decks', await db.createDeck(name));
     } else {
@@ -485,7 +489,7 @@ async function viewImport(ctx, [deckId]) {
     const failed = [];
     let quotaHit = false;
     for (const [i, it] of selected.entries()) {
-      $('#progressText').textContent = `Saving ${i + 1} of ${selected.length}…`;
+      $('#progressText').textContent = `Enregistrement ${i + 1} sur ${selected.length}…`;
       try {
         const data = await it.file.arrayBuffer();
         await db.addSign(deck, it.name.trim(), data, videoType(it.file));
@@ -500,9 +504,9 @@ async function viewImport(ctx, [deckId]) {
     busy = false;
     await requestPersist();
 
-    if (quotaHit) alert(`Your phone ran out of space for this app after ${ok} videos. Free up storage and import the rest.`);
-    else if (failed.length) alert(`Imported ${ok}. These could not be read:\n${failed.join('\n')}`);
-    else toast(`Imported ${plural(ok, 'video')}`);
+    if (quotaHit) alert(`Votre téléphone n'a plus assez d'espace pour l'app après ${plural(ok, 'vidéo')}. Libérez de l'espace et importez le reste.`);
+    else if (failed.length) alert(`${plural(ok, 'vidéo importée', 'vidéos importées')}. Ces fichiers n'ont pas pu être lus :\n${failed.join('\n')}`);
+    else toast(plural(ok, 'vidéo importée', 'vidéos importées'));
     location.hash = `#/deck/${deck.id}`;
   }
 
@@ -521,9 +525,9 @@ async function viewStudy(ctx, _args, params) {
   app.innerHTML = `
     <div class="study">
       <header class="bar">
-        <a class="icon-btn" href="${back}" aria-label="Close">${ICON.close}</a>
+        <a class="icon-btn" href="${back}" aria-label="Fermer">${ICON.close}</a>
         <div id="counts"></div>
-        <button type="button" class="icon-btn" id="undo" aria-label="Undo last answer" disabled>${ICON.undo}</button>
+        <button type="button" class="icon-btn" id="undo" aria-label="Annuler la dernière réponse" disabled>${ICON.undo}</button>
       </header>
       <main class="card-area" id="card"></main>
       <footer class="actions" id="actions"></footer>
@@ -550,7 +554,7 @@ async function viewStudy(ctx, _args, params) {
     const deck = session.decks.get(card.deckId);
     $('#card').innerHTML = `
       ${session.decks.size > 1 ? `<div class="deck-tag">${esc(deck?.name)}</div>` : ''}
-      <div class="prompt">${card.mode === 'video2word' ? 'What does this sign mean?' : 'How do you sign this?'}</div>
+      <div class="prompt">${card.mode === 'video2word' ? 'Que signifie ce signe ?' : 'Comment signe-t-on ceci ?'}</div>
       <div class="slot-word"></div>
       <div class="slot-video"></div>`;
     if (card.mode === 'video2word') {
@@ -559,7 +563,7 @@ async function viewStudy(ctx, _args, params) {
     } else {
       $('.slot-word').innerHTML = `<div class="word">${esc(sign?.name)}</div>`;
     }
-    $('#actions').innerHTML = '<button type="button" class="btn primary block big" id="reveal">Show answer</button>';
+    $('#actions').innerHTML = '<button type="button" class="btn primary block big" id="reveal">Voir la réponse</button>';
     $('#reveal').addEventListener('click', reveal);
     updateCounts();
   }
@@ -574,9 +578,8 @@ async function viewStudy(ctx, _args, params) {
       player = createPlayer(current.signId);
       $('.slot-video').append(player);
     }
-    const labels = session.preview(current);
     $('#actions').innerHTML = `<div class="ratings">
-      ${['Again', 'Hard', 'Good', 'Easy'].map((l, i) => `<button type="button" class="rate r${i + 1}" data-r="${i + 1}"><span class="ivl">${labels[i]}</span>${l}</button>`).join('')}
+      ${RATINGS.map(([r, l]) => `<button type="button" class="rate r${r}" data-r="${r}">${l}</button>`).join('')}
     </div>`;
     $$('#actions [data-r]').forEach((b) => b.addEventListener('click', () => rate(Number(b.dataset.r))));
   }
@@ -596,11 +599,11 @@ async function viewStudy(ctx, _args, params) {
     player = null;
     const due = session.nextLearningDue();
     $('#card').innerHTML = due
-      ? `<div class="done"><div class="done-icon">⏳</div><h2>Nice work!</h2>
-           <p>More cards in ${formatDuration(due - Date.now())}. Keep this screen open or come back later.</p></div>`
-      : `<div class="done"><div class="done-icon">🎉</div><h2>${session.answered ? 'All done for today' : 'Nothing to study right now'}</h2>
-           <p>${session.answered ? `You answered ${plural(session.answered, 'card')}.` : 'Come back tomorrow, or raise “New signs per day” in the deck settings.'}</p></div>`;
-    $('#actions').innerHTML = `<a class="btn block" href="${back}">Back</a>`;
+      ? `<div class="done"><div class="done-icon">⏳</div><h2>Bien joué !</h2>
+           <p>D'autres cartes dans ${formatDuration(due - Date.now())}. Gardez cet écran ouvert ou revenez plus tard.</p></div>`
+      : `<div class="done"><div class="done-icon">🎉</div><h2>${session.answered ? 'Terminé pour aujourd\'hui' : 'Rien à étudier pour le moment'}</h2>
+           <p>${session.answered ? `Vous avez répondu à ${plural(session.answered, 'carte')}.` : 'Revenez demain, ou augmentez « Nouveaux signes par jour » dans les réglages du paquet.'}</p></div>`;
+    $('#actions').innerHTML = `<a class="btn block" href="${back}">Retour</a>`;
     updateCounts();
     if (due) timer = setTimeout(next, Math.max(1000, due - Date.now() + 500));
   }
@@ -615,7 +618,7 @@ async function viewStudy(ctx, _args, params) {
     if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
       if (!revealed) reveal(); else rate(3);
-    } else if (revealed && ['1', '2', '3', '4'].includes(e.key)) {
+    } else if (revealed && ['1', '2', '3'].includes(e.key)) {
       rate(Number(e.key));
     } else if (e.key === 'z') {
       $('#undo').click();
@@ -636,56 +639,56 @@ async function viewSettings(ctx) {
   const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 
   app.innerHTML = `
-    ${header('Settings', { back: '#/' })}
+    ${header('Réglages', { back: '#/' })}
     <main class="page">
       <section>
-        <h2>Storage</h2>
-        <p id="usage" class="muted">Checking…</p>
+        <h2>Stockage</h2>
+        <p id="usage" class="muted">Vérification…</p>
         <p id="persist" class="muted"></p>
-        <button type="button" class="btn block" id="persistBtn" hidden>Keep my data permanently</button>
+        <button type="button" class="btn block" id="persistBtn" hidden>Conserver mes données durablement</button>
       </section>
 
       <section>
-        <h2>New decks</h2>
-        <label class="field"><span>Default new signs per day</span>
+        <h2>Nouveaux paquets</h2>
+        <label class="field"><span>Nouveaux signes par jour (par défaut)</span>
           <input type="number" id="defNpd" inputmode="numeric" min="0" max="999" value="${defNpd}">
         </label>
       </section>
 
       <section>
-        <h2>Backup progress</h2>
-        <p class="hint">Saves your decks and learning progress (not the videos) to a small file. After reinstalling, import it here and re-import the videos: progress is matched by deck and sign name.</p>
-        <button type="button" class="btn block" id="export">Export progress</button>
-        <button type="button" class="btn block" id="importBtn">Import progress…</button>
+        <h2>Sauvegarde de la progression</h2>
+        <p class="hint">Enregistre vos paquets et votre progression (pas les vidéos) dans un petit fichier. Après une réinstallation, importez-le ici puis réimportez les vidéos : la progression est retrouvée grâce aux noms des paquets et des signes.</p>
+        <button type="button" class="btn block" id="export">Exporter la progression</button>
+        <button type="button" class="btn block" id="importBtn">Importer une progression…</button>
         <input type="file" id="importFile" accept=".json,application/json" hidden>
-        ${pendingCount ? `<p class="hint">${plural(pendingCount, 'card')} of imported progress are waiting for their videos.</p>` : ''}
+        ${pendingCount ? `<p class="hint">La progression importée de ${plural(pendingCount, 'carte')} attend ses vidéos.</p>` : ''}
       </section>
 
       <section>
-        <h2>Install on iPhone</h2>
-        ${standalone ? '<p class="ok">✓ Running as a home screen app.</p>' : `
+        <h2>Installer sur iPhone</h2>
+        ${standalone ? '<p class="ok">✓ L\'app est lancée depuis l\'écran d\'accueil.</p>' : `
         <ol class="hint">
-          <li>Open this page in <b>Safari</b>.</li>
-          <li>Tap the <b>Share</b> button, then <b>Add to Home Screen</b>.</li>
-          <li>Open Sign Cards from the home screen and import your videos <i>there</i>. The home screen app has its own storage, separate from Safari.</li>
+          <li>Ouvrez cette page dans <b>Safari</b>.</li>
+          <li>Touchez le bouton <b>Partager</b>, puis <b>Sur l'écran d'accueil</b>.</li>
+          <li>Ouvrez Flashcards depuis l'écran d'accueil et importez vos vidéos <i>depuis l'app</i>. Elle a son propre stockage, séparé de Safari.</li>
         </ol>`}
-        <p class="hint">Videos are stored only on this device. Deleting the home screen app deletes them too.</p>
+        <p class="hint">Les vidéos sont stockées uniquement sur cet appareil. Supprimer l'app de l'écran d'accueil les supprime aussi.</p>
       </section>
 
       <section>
-        <h2>Danger zone</h2>
-        <button type="button" class="btn danger block" id="wipe">Delete all data</button>
+        <h2>Zone de danger</h2>
+        <button type="button" class="btn danger block" id="wipe">Supprimer toutes les données</button>
       </section>
     </main>`;
 
   (async () => {
     try {
       const est = await navigator.storage?.estimate?.();
-      if (est) $('#usage').textContent = `Using ${bytes(est.usage)}${est.quota ? ` of ${bytes(est.quota)} available` : ''}.`;
-      else $('#usage').textContent = 'Storage information not available.';
+      if (est) $('#usage').textContent = `${bytes(est.usage)} utilisés${est.quota ? ` sur ${bytes(est.quota)} disponibles` : ''}.`;
+      else $('#usage').textContent = 'Informations de stockage indisponibles.';
       const persisted = await navigator.storage?.persisted?.();
       if (persisted !== undefined) {
-        $('#persist').textContent = persisted ? '✓ Data is stored permanently.' : 'The browser may clear data if the phone runs low on space.';
+        $('#persist').textContent = persisted ? '✓ Les données sont conservées durablement.' : 'Le navigateur peut effacer les données si le téléphone manque d\'espace.';
         $('#persistBtn').hidden = persisted;
       }
     } catch {}
@@ -693,7 +696,7 @@ async function viewSettings(ctx) {
 
   $('#persistBtn').addEventListener('click', async () => {
     const ok = await navigator.storage.persist();
-    toast(ok ? 'Data will be kept' : 'The browser declined. Adding the app to the home screen usually helps.');
+    toast(ok ? 'Les données seront conservées' : 'Le navigateur a refusé. Ajouter l\'app à l\'écran d\'accueil aide généralement.');
     if (ok) route();
   });
 
@@ -701,7 +704,7 @@ async function viewSettings(ctx) {
     const n = Math.max(0, Math.min(999, Math.round(Number(e.target.value) || 0)));
     e.target.value = n;
     await db.setMeta('defaultNewPerDay', n);
-    toast('Saved');
+    toast('Enregistré');
   });
 
   $('#export').addEventListener('click', async () => shareOrDownload(await buildExport()));
@@ -712,16 +715,16 @@ async function viewSettings(ctx) {
     if (!file) return;
     try {
       const { updated, waiting } = await importProgress(JSON.parse(await file.text()));
-      alert(`Progress restored for ${plural(updated, 'card')}.${waiting ? `\n${plural(waiting, 'card')} will be restored when you import their videos.` : ''}`);
+      alert(`Progression restaurée pour ${plural(updated, 'carte')}.${waiting ? `\n${plural(waiting, 'carte')} : restauration à l'import des vidéos.` : ''}`);
       route();
     } catch (err) {
-      alert(`Could not import: ${err.message}`);
+      alert(`Import impossible : ${err.message}`);
     }
   });
 
   $('#wipe').addEventListener('click', async () => {
-    if (!confirm('Delete ALL decks, videos and progress from this device?')) return;
-    if (!confirm('Are you sure? This cannot be undone.')) return;
+    if (!confirm('Supprimer TOUS les paquets, vidéos et la progression de cet appareil ?')) return;
+    if (!confirm('Vraiment ? Cette action est irréversible.')) return;
     await db.deleteEverything();
     location.hash = '#/';
     location.reload();

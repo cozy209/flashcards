@@ -60,7 +60,7 @@ test('ease never drops below 1.3', () => {
 });
 
 test('labels', () => {
-  assert.deepEqual([1, 2, 3, 4].map((r) => nextLabel(fresh(), r, now)), ['1m', '6m', '10m', '4d']);
+  assert.deepEqual([1, 2, 3, 4].map((r) => nextLabel(fresh(), r, now)), ['1 min', '6 min', '10 min', '4 j']);
 });
 
 test('day starts at 4am', () => {

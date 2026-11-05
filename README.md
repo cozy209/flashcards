@@ -1,10 +1,10 @@
-# Sign Cards
+# Flashcards
 
 Offline flashcards for learning sign language from your own videos. It runs on iPhone as a home-screen web app, so you don't need the App Store or an Apple developer account.
 
 - **Your videos become cards.** The file name is the sign name (`thank_you.mp4` → "Thank you").
 - **Two card types per sign:** *Sign → Word* (watch, recall the meaning) and *Word → Sign* (read, perform the sign, check with the video).
-- **Spaced repetition** (Anki-style Again / Hard / Good / Easy).
+- **Spaced repetition** with three answers: **À revoir** (wrong), **Difficile** (hard), **Je sais** (right).
 - **One deck per collection.**
 - **Fully offline.** Videos and progress are stored on the phone and never uploaded anywhere.
 
@@ -25,16 +25,16 @@ Only the app code goes on GitHub. Your videos stay on your phone.
 
 1. Open the URL in **Safari**. Other browsers can't install web apps on iOS.
 2. Tap **Share → Add to Home Screen → Add**.
-3. Open **Sign Cards** from the home screen. Import your videos *from the home-screen app*, because it has its own storage, separate from Safari.
+3. Open **Flashcards** from the home screen. Import your videos *from the home-screen app*, because it has its own storage, separate from Safari.
 
 ## 3. Import your videos from Google Drive
 
 1. Install the **Google Drive** app and sign in. Drive then appears in the iOS Files picker. (Or download the folder to *On My iPhone* first.)
-2. In Sign Cards tap **Import videos**, choose **+ New deck…** and type the collection name.
+2. In Flashcards tap **Importer des vidéos**, choose **+ Nouveau paquet…** and type the collection name.
 3. Tap **Choose videos… → Choose Files / Browse → Google Drive**, open the collection folder, tap **Select**, select all, then **Open**.
 4. Check the sign names (you can edit them) and tap **Import**. The videos are copied onto the phone, so Drive isn't needed afterwards.
 
-**Or import a whole collection as a .zip.** Tap **Import videos → Import collection from .zip…** and pick the zip. The deck is named after the zip file (`Alphabet.zip` → "Alphabet"). If a deck with that name already exists, the videos are added to it. Google Drive's *Download* on a folder makes a zip like `Alphabet-20261105T101500Z-001.zip`, and the date part is dropped from the name. Videos in subfolders are included.
+**Or import a whole collection as a .zip.** Tap **Importer des vidéos → Import collection from .zip…** and pick the zip. The deck is named after the zip file (`Alphabet.zip` → "Alphabet"). If a deck with that name already exists, the videos are added to it. Google Drive's *Download* on a folder makes a zip like `Alphabet-20261105T101500Z-001.zip`, and the date part is dropped from the name. Videos in subfolders are included.
 
 Avoid importing from the Photo Library: iOS renames those videos to `IMG_1234`.
 
@@ -46,7 +46,7 @@ Supported formats: `.mp4`, `.mov`, `.m4v` (best on iPhone); `.webm` only on rece
 - Choose **Both / Sign → Word / Word → Sign** on the home or deck screen.
 - Each deck introduces **10 new signs per day** by default (change it in the deck settings). The two cards of a sign are shown on different days so one doesn't give away the other.
 - Videos loop. Use **Speed** for slow motion (0.75× / 0.5×) and tap the video to pause.
-- ↶ undoes the last answer. On a computer: Space = show/Good, 1–4 = rate, Z = undo.
+- ↶ undoes the last answer. On a computer: Space = show answer / Je sais, 1–3 = answer, Z = undo.
 
 ## Backups
 

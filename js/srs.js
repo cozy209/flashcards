@@ -113,19 +113,20 @@ export function schedule(card, rating, now = Date.now()) {
 
 export function formatDuration(ms) {
   const m = ms / MIN;
-  if (m < 60) return `${Math.max(1, Math.round(m))}m`;
+  if (m < 60) return `${Math.max(1, Math.round(m))} min`;
   const h = ms / HOUR;
-  if (h < 24) return `${Math.round(h)}h`;
+  if (h < 24) return `${Math.round(h)} h`;
   return formatDays(Math.round(ms / DAY));
 }
 
 export function formatDays(d) {
-  if (d < 30) return `${d}d`;
-  if (d < 365) return `${trim1(d / 30)}mo`;
-  return `${trim1(d / 365)}y`;
+  if (d < 30) return `${d} j`;
+  if (d < 365) return `${trim1(d / 30)} mois`;
+  const y = trim1(d / 365);
+  return `${y} ${y === '1' ? 'an' : 'ans'}`;
 }
 
-const trim1 = (n) => n.toFixed(1).replace(/\.0$/, '');
+const trim1 = (n) => n.toFixed(1).replace(/\.0$/, '').replace('.', ',');
 
 /** Short label for when a card would next be shown after a rating ("10m", "3d"…). */
 export function nextLabel(card, rating, now = Date.now()) {

@@ -29,7 +29,7 @@ export function openDB() {
         resolve(db);
       };
       req.onerror = () => reject(req.error);
-      req.onblocked = () => reject(new Error('Database is open in another tab. Close it and retry.'));
+      req.onblocked = () => reject(new Error('La base de données est ouverte dans un autre onglet. Fermez-le et réessayez.'));
     });
   }
   return dbPromise;
@@ -131,7 +131,7 @@ export function addSign(deck, name, data, type) {
 export function renameSign(signId, name) {
   return tx('signs', 'readwrite', async (s) => {
     const sign = await reqP(s.signs.get(signId));
-    if (!sign) throw new Error('Sign not found');
+    if (!sign) throw new Error('Signe introuvable');
     sign.name = name;
     await reqP(s.signs.put(sign));
   });
