@@ -1,23 +1,24 @@
 // Export / import study progress as JSON (videos are not included).
 import * as db from './db.js';
+import { fromLegacyCards, progressOf } from './progress.js';
 
 export async function buildExport() {
-  const [decks, signs, cards] = await Promise.all([db.getAll('decks'), db.getAll('signs'), db.getAll('cards')]);
+  const [decks, signs, pending, sessionSize] = await Promise.all([
+    db.getAll('decks'), db.getAll('signs'), db.getAll('pending'), db.getSessionSize(),
+  ]);
   const deckById = new Map(decks.map((d) => [d.id, d]));
-  const signById = new Map(signs.map((s) => [s.id, s]));
-  const pending = await db.getAll('pending');
   return {
     app: 'signcards',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
-    newPerDay: await db.getNewPerDay(),
+    sessionSize,
     decks: decks.map((d) => ({ name: d.name })),
-    cards: [
-      ...cards
-        .filter((c) => deckById.has(c.deckId) && signById.has(c.signId))
-        .map((c) => ({ deck: deckById.get(c.deckId).name, sign: signById.get(c.signId).name, mode: c.mode, ...db.pickSrs(c) })),
+    signs: [
+      ...signs
+        .filter((s) => deckById.has(s.deckId))
+        .map((s) => ({ deck: deckById.get(s.deckId).name, sign: s.name, ...progressOf(s) })),
       // Keep progress that was imported earlier but whose video hasn't been re-added yet.
-      ...pending.map((p) => p.progress),
+      ...pending.filter((p) => p.key.endsWith('|sign')).map((p) => p.progress),
     ],
   };
 }
@@ -41,37 +42,52 @@ export async function shareOrDownload(data) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-/** Applies progress to matching cards; unmatched entries wait in `pending` until their video is imported. */
+const PROGRESS_FIELDS = ['lastRating', 'streak', 'reviews', 'lastReview'];
+const pick = (o) => Object.fromEntries(PROGRESS_FIELDS.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
+
+/** Old backups (version 1) stored one entry per direction: merge them into one entry per sign. */
+function signEntries(json) {
+  if (Array.isArray(json.signs)) return json.signs;
+  const bySign = new Map();
+  for (const c of json.cards || []) {
+    if (!c.deck || !c.sign) continue;
+    const key = db.pendingKey(c.deck, c.sign, 'sign');
+    if (!bySign.has(key)) bySign.set(key, { deck: c.deck, sign: c.sign, cards: [] });
+    bySign.get(key).cards.push(c);
+  }
+  return [...bySign.values()].map((e) => ({ deck: e.deck, sign: e.sign, ...fromLegacyCards(e.cards) }));
+}
+
+/** Applies progress to matching signs; unmatched entries wait in `pending` until their video is imported. */
 export async function importProgress(json) {
-  if (json?.app !== 'signcards' || !Array.isArray(json.cards)) throw new Error('Ce n\'est pas un fichier de sauvegarde Flashcards.');
+  if (json?.app !== 'signcards' || !(Array.isArray(json.signs) || Array.isArray(json.cards))) {
+    throw new Error('Ce n\'est pas un fichier de sauvegarde Flashcards.');
+  }
 
   for (const d of json.decks || []) {
-    if (!d.name) continue;
-    if (!(await db.findDeckByName(d.name))) await db.createDeck(d.name);
+    if (d.name && !(await db.findDeckByName(d.name))) await db.createDeck(d.name);
   }
-  if (Number.isFinite(json.newPerDay)) await db.setNewPerDay(json.newPerDay);
+  if (Number.isFinite(json.sessionSize)) await db.setSessionSize(json.sessionSize);
 
-  const [decks, signs, cards] = await Promise.all([db.getAll('decks'), db.getAll('signs'), db.getAll('cards')]);
+  const [decks, signs] = await Promise.all([db.getAll('decks'), db.getAll('signs')]);
   const deckById = new Map(decks.map((d) => [d.id, d]));
-  const signById = new Map(signs.map((s) => [s.id, s]));
-  const cardByKey = new Map();
-  for (const c of cards) {
-    const deck = deckById.get(c.deckId);
-    const sign = signById.get(c.signId);
-    if (deck && sign) cardByKey.set(db.pendingKey(deck.name, sign.name, c.mode), c);
+  const signByKey = new Map();
+  for (const s of signs) {
+    const deck = deckById.get(s.deckId);
+    if (deck) signByKey.set(db.pendingKey(deck.name, s.name, 'sign'), s);
   }
 
   let updated = 0, waiting = 0;
-  await db.tx(['cards', 'pending'], 'readwrite', (s) => {
-    for (const p of json.cards) {
-      if (!p.deck || !p.sign || !p.mode) continue;
-      const key = db.pendingKey(p.deck, p.sign, p.mode);
-      const card = cardByKey.get(key);
-      if (card) {
-        s.cards.put({ ...card, ...db.pickSrs(p) });
+  await db.tx(['signs', 'pending'], 'readwrite', (s) => {
+    for (const e of signEntries(json)) {
+      if (!e.deck || !e.sign) continue;
+      const key = db.pendingKey(e.deck, e.sign, 'sign');
+      const sign = signByKey.get(key);
+      if (sign) {
+        s.signs.put({ ...sign, progress: { ...progressOf(sign), ...pick(e) } });
         updated++;
       } else {
-        s.pending.put({ key, progress: { deck: p.deck, sign: p.sign, mode: p.mode, ...db.pickSrs(p) } });
+        s.pending.put({ key, progress: { deck: e.deck, sign: e.sign, ...pick(e) } });
         waiting++;
       }
     }

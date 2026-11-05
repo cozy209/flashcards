@@ -4,7 +4,7 @@ Offline flashcards for learning sign language from your own videos. It runs on i
 
 - **Your videos become cards.** The file name is the sign name (`thank_you.mp4` → "Thank you").
 - **Two card types per sign:** *Sign → Word* (watch, recall the meaning) and *Word → Sign* (read, perform the sign, check with the video).
-- **Spaced repetition** with three answers: **À revoir** (wrong), **Difficile** (hard), **Je sais** (right).
+- **Weighted random sessions** with three answers: **À revoir** (wrong), **Difficile** (hard), **Je sais** (right). Signs you get wrong come up more often.
 - **One deck per collection.**
 - **Fully offline.** Videos and progress are stored on the phone and never uploaded anywhere.
 
@@ -42,9 +42,19 @@ Supported formats: `.mp4`, `.mov`, `.m4v` (best on iPhone); `.webm` only on rece
 
 ## Studying
 
-- Each deck shows how many signs you know, e.g. **10/24 connus**. A sign is known when your last answer on each of its cards was **Je sais**.
-- Choose **Both / Sign → Word / Word → Sign** on the home or deck screen.
-- The app introduces **10 new signs per day** in total, across all decks (change it in Réglages → Étude). The two cards of a sign are shown on different days so one doesn't give away the other.
+- When you tap **Étudier**, the app draws **20 signs** at random (change it in Réglages → Étude → *Signes par session*). Each sign is shown **once** per session, even if you get it wrong.
+- Each sign has a weight, based on your last answer. A sign with weight 4 is twice as likely to be drawn as one with weight 2:
+
+  | Sign | Weight |
+  |---|---|
+  | Known (**Je sais** more than 5 times in a row) | 1 |
+  | Never shown, or last answer **Je sais** | 2 |
+  | Last answer **Difficile** | 3 |
+  | Last answer **À revoir** | 4 |
+
+  A **Difficile** or **À revoir** resets the Je sais count. Known signs still come back now and then.
+- Each deck shows how many signs you know, e.g. **10/24 connus**.
+- Choose **Les deux / Signe → Mot / Mot → Signe** on the home or deck screen. A sign has one weight for both directions; with *Les deux* the direction is picked at random.
 - Videos loop. Use **Speed** for slow motion (0.75× / 0.5×) and tap the video to pause.
 - ↶ undoes the last answer. On a computer: Space = show answer / Je sais, 1–3 = answer, Z = undo.
 
@@ -62,8 +72,8 @@ Upload the changed files to the GitHub repository again. The app updates in the 
 
 ```sh
 python3 -m http.server 8000   # then open http://localhost:8000
-node tests/srs.test.mjs       # scheduling tests
+node tests/progress.test.mjs  # weights, draw and session tests
 node tests/zip.test.mjs       # zip import tests
 ```
 
-No build step and no dependencies. The code is in `js/`: `app.js` (screens), `db.js` (IndexedDB storage), `srs.js` (scheduling), `study.js` (session queue), `importer.js`, `zip.js` (zip reader), `backup.js`.
+No build step and no dependencies. The code is in `js/`: `app.js` (screens), `db.js` (IndexedDB storage), `progress.js` (weights and weighted draw), `study.js` (session), `importer.js`, `zip.js` (zip reader), `backup.js`.

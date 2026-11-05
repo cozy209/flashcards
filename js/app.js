@@ -1,12 +1,11 @@
 import * as db from './db.js';
 import { Session, deckProgress } from './study.js';
-import { formatDuration } from './srs.js';
 import { ACCEPT, parseSignName, videoType, naturalCompare, isVideoEntry, deckNameFromZip } from './importer.js';
 import { readZip, ZipError } from './zip.js';
 import { buildExport, shareOrDownload, importProgress } from './backup.js';
 
 const app = document.getElementById('app');
-// Answer buttons → SRS rating (1 = again, 2 = hard, 3 = good).
+// Answer buttons → rating (see progress.js for the weights).
 const RATINGS = [[1, 'À revoir'], [2, 'Difficile'], [3, 'Je sais']];
 const MODES = { both: 'Les deux', video2word: 'Signe → Mot', word2video: 'Mot → Signe' };
 
@@ -523,18 +522,15 @@ async function viewStudy(ctx, _args, params) {
   let current = null;
   let revealed = false;
   let player = null;
-  let timer = null;
   let busy = false;
 
   const updateCounts = () => {
-    const c = session.counts();
-    const left = c.newCount + c.learnCount + c.reviewCount;
+    const left = session.remaining();
     $('#counts').innerHTML = `<span class="left">${left} ${left < 2 ? 'restante' : 'restantes'}</span>`;
     $('#undo').disabled = !session.history.length;
   };
 
   function show(card) {
-    clearTimeout(timer);
     player?.destroy();
     player = null;
     current = card;
@@ -586,15 +582,17 @@ async function viewStudy(ctx, _args, params) {
     current = null;
     player?.destroy();
     player = null;
-    const due = session.nextLearningDue();
-    $('#card').innerHTML = due
-      ? `<div class="done"><div class="done-icon">⏳</div><h2>Bien joué !</h2>
-           <p>D'autres cartes dans ${formatDuration(due - Date.now())}. Gardez cet écran ouvert ou revenez plus tard.</p></div>`
-      : `<div class="done"><div class="done-icon">🎉</div><h2>${session.answered ? 'Terminé pour aujourd\'hui' : 'Rien à étudier pour le moment'}</h2>
-           <p>${session.answered ? `Vous avez répondu à ${plural(session.answered, 'carte')}.` : 'Revenez demain, ou augmentez « Nouveaux signes par jour » dans les Réglages.'}</p></div>`;
-    $('#actions').innerHTML = `<a class="btn block" href="${back}">Retour</a>`;
+    $('#card').innerHTML = session.queue.length
+      ? `<div class="done"><div class="done-icon">🎉</div><h2>Session terminée</h2>
+           <p>Vous avez révisé ${plural(session.answered, 'signe')}. Les signes ratés ont plus de chances de revenir à la prochaine session.</p></div>`
+      : `<div class="done"><div class="done-icon">🤟</div><h2>Aucun signe à étudier</h2>
+           <p>Importez des vidéos pour commencer.</p></div>`;
+    $('#actions').innerHTML = `<div class="ratings two">
+      <a class="btn" href="${back}">Retour</a>
+      ${session.queue.length ? '<button type="button" class="btn primary" id="again">Nouvelle session</button>' : ''}
+    </div>`;
+    $('#again')?.addEventListener('click', () => route());
     updateCounts();
-    if (due) timer = setTimeout(next, Math.max(1000, due - Date.now() + 500));
   }
 
   $('#undo').addEventListener('click', async () => {
@@ -614,16 +612,13 @@ async function viewStudy(ctx, _args, params) {
     }
   };
   document.addEventListener('keydown', onKey);
-  cleanups.push(() => {
-    clearTimeout(timer);
-    document.removeEventListener('keydown', onKey);
-  });
+  cleanups.push(() => document.removeEventListener('keydown', onKey));
 
   next();
 }
 
 async function viewSettings(ctx) {
-  const [npd, pendingCount] = await Promise.all([db.getNewPerDay(), db.count('pending')]);
+  const [sessionSize, pendingCount] = await Promise.all([db.getSessionSize(), db.count('pending')]);
   if (!ctx.alive()) return;
   const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 
@@ -639,10 +634,13 @@ async function viewSettings(ctx) {
 
       <section>
         <h2>Étude</h2>
-        <label class="field"><span>Nouveaux signes par jour</span>
-          <input type="number" id="npd" inputmode="numeric" min="0" max="999" value="${npd}">
+        <label class="field"><span>Signes par session</span>
+          <input type="number" id="sessionSize" inputmode="numeric" min="1" max="999" value="${sessionSize}">
         </label>
-        <p class="hint">Pour tous les decks ensemble : c'est la même limite que vous étudiiez un deck ou tous. Les révisions ne sont pas limitées. Mettez 0 pour faire une pause dans les nouveaux signes.</p>
+        <p class="hint">Au début de chaque session, les signes sont tirés au hasard et chacun n'apparaît qu'une fois.
+          Plus un signe est difficile, plus il a de chances d'être tiré :
+          <b>À revoir</b> ×4, <b>Difficile</b> ×3, nouveau ou <b>Je sais</b> ×2, connu ×1
+          (connu = <b>Je sais</b> plus de 5 fois de suite).</p>
       </section>
 
       <section>
@@ -651,7 +649,7 @@ async function viewSettings(ctx) {
         <button type="button" class="btn block" id="export">Exporter la progression</button>
         <button type="button" class="btn block" id="importBtn">Importer une progression…</button>
         <input type="file" id="importFile" accept=".json,application/json" hidden>
-        ${pendingCount ? `<p class="hint">La progression importée de ${plural(pendingCount, 'carte')} attend ses vidéos.</p>` : ''}
+        ${pendingCount ? `<p class="hint">La progression importée de ${plural(pendingCount, 'signe')} attend ses vidéos.</p>` : ''}
       </section>
 
       <section>
@@ -690,10 +688,10 @@ async function viewSettings(ctx) {
     if (ok) route();
   });
 
-  $('#npd').addEventListener('change', async (e) => {
-    const n = Math.max(0, Math.min(999, Math.round(Number(e.target.value) || 0)));
+  $('#sessionSize').addEventListener('change', async (e) => {
+    const n = Math.max(1, Math.min(999, Math.round(Number(e.target.value) || 1)));
     e.target.value = n;
-    await db.setNewPerDay(n);
+    await db.setSessionSize(n);
     toast('Enregistré');
   });
 
@@ -705,7 +703,7 @@ async function viewSettings(ctx) {
     if (!file) return;
     try {
       const { updated, waiting } = await importProgress(JSON.parse(await file.text()));
-      alert(`Progression restaurée pour ${plural(updated, 'carte')}.${waiting ? `\n${plural(waiting, 'carte')} : restauration à l'import des vidéos.` : ''}`);
+      alert(`Progression restaurée pour ${plural(updated, 'signe')}.${waiting ? `\n${plural(waiting, 'signe')} : restauration à l'import des vidéos.` : ''}`);
       route();
     } catch (err) {
       alert(`Import impossible : ${err.message}`);
@@ -724,7 +722,7 @@ async function viewSettings(ctx) {
 const VIEWS = { '': viewDecks, deck: viewDeck, import: viewImport, study: viewStudy, settings: viewSettings };
 
 window.addEventListener('hashchange', route);
-route();
+db.migrateProgress().catch((err) => console.error(err)).finally(route);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('Service worker failed', err));

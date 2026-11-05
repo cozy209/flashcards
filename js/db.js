@@ -1,5 +1,7 @@
-// IndexedDB storage. Everything (decks, cards, progress, videos) lives on the device.
-import { newCardFields, SRS_FIELDS } from './srs.js';
+// IndexedDB storage. Everything (decks, signs, progress, videos) lives on the device.
+// Progress is stored on each sign (`sign.progress`). The `cards` store is from the old
+// per-direction scheduler: it is only read once to migrate old progress.
+import { emptyProgress, fromLegacyCards, DEFAULT_SESSION_SIZE } from './progress.js';
 
 const DB_NAME = 'signcards';
 const DB_VERSION = 1;
@@ -87,10 +89,9 @@ export async function createDeck(name) {
   return put('decks', { name: name.trim(), createdAt: Date.now() });
 }
 
-// New signs per day: one setting for all decks together.
-export const DEFAULT_NEW_PER_DAY = 10;
-export const getNewPerDay = () => getMeta('defaultNewPerDay', DEFAULT_NEW_PER_DAY);
-export const setNewPerDay = (n) => setMeta('defaultNewPerDay', n);
+// Number of signs drawn per study session (all decks together).
+export const getSessionSize = () => getMeta('sessionSize', DEFAULT_SESSION_SIZE);
+export const setSessionSize = (n) => setMeta('sessionSize', n);
 
 export function deleteDeck(deckId) {
   return tx(['decks', 'signs', 'cards', 'videos'], 'readwrite', async (s) => {
@@ -107,28 +108,51 @@ export function deleteDeck(deckId) {
 export const pendingKey = (deckName, signName, mode) =>
   `${deckName.trim().toLowerCase()}|${signName.trim().toLowerCase()}|${mode}`;
 
-export function pickSrs(obj) {
-  const out = {};
-  for (const f of SRS_FIELDS) if (obj[f] !== undefined) out[f] = obj[f];
-  return out;
+/** Imported progress waiting for its video (old backups stored one entry per direction). */
+const PENDING_KINDS = ['sign', ...MODES];
+
+/** Adds a sign with its video. Applies any pending imported progress. */
+export function addSign(deck, name, data, type) {
+  return tx(['signs', 'videos', 'pending'], 'readwrite', async (s) => {
+    let progress = emptyProgress();
+    const legacy = [];
+    for (const kind of PENDING_KINDS) {
+      const key = pendingKey(deck.name, name, kind);
+      const pending = await reqP(s.pending.get(key));
+      if (!pending) continue;
+      if (kind === 'sign') {
+        const { deck: _d, sign: _s, ...fields } = pending.progress;
+        progress = { ...progress, ...fields };
+      }
+      else legacy.push(pending.progress);
+      s.pending.delete(key);
+    }
+    if (!progress.lastReview && legacy.length) progress = fromLegacyCards(legacy);
+    const signId = await reqP(s.signs.add({ deckId: deck.id, name, createdAt: Date.now(), progress }));
+    await reqP(s.videos.put({ signId, data, type, size: data.byteLength }));
+    return signId;
+  });
 }
 
-/** Adds a sign with its video and one card per study mode. Applies any pending imported progress. */
-export function addSign(deck, name, data, type) {
-  return tx(['signs', 'cards', 'videos', 'pending'], 'readwrite', async (s) => {
-    const signId = await reqP(s.signs.add({ deckId: deck.id, name, createdAt: Date.now() }));
-    await reqP(s.videos.put({ signId, data, type, size: data.byteLength }));
-    for (const mode of MODES) {
-      const card = { deckId: deck.id, signId, mode, ...newCardFields() };
-      const key = pendingKey(deck.name, name, mode);
-      const pending = await reqP(s.pending.get(key));
-      if (pending) {
-        Object.assign(card, pickSrs(pending.progress));
-        s.pending.delete(key);
-      }
-      await reqP(s.cards.add(card));
+export function saveProgress(signId, progress) {
+  return tx('signs', 'readwrite', async (s) => {
+    const sign = await reqP(s.signs.get(signId));
+    if (!sign) return;
+    sign.progress = progress;
+    await reqP(s.signs.put(sign));
+  });
+}
+
+/** One-time move of progress from the old per-direction cards onto the signs. */
+export function migrateProgress() {
+  return tx(['signs', 'cards'], 'readwrite', async (s) => {
+    const signs = await reqP(s.signs.getAll());
+    for (const sign of signs) {
+      if (sign.progress) continue;
+      const cards = await reqP(s.cards.index('signId').getAll(sign.id));
+      sign.progress = fromLegacyCards(cards);
+      s.signs.put(sign);
     }
-    return signId;
   });
 }
 
