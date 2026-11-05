@@ -30,7 +30,7 @@ Only the app code goes on GitHub. Your videos stay on your phone.
 ## 3. Import your videos from Google Drive
 
 1. Install the **Google Drive** app and sign in. Drive then appears in the iOS Files picker. (Or download the folder to *On My iPhone* first.)
-2. In Flashcards tap **Importer des vidéos**, choose **+ Nouveau paquet…** and type the collection name.
+2. In Flashcards tap **Importer des vidéos**, choose **+ Nouveau deck…** and type the collection name.
 3. Tap **Choose videos… → Choose Files / Browse → Google Drive**, open the collection folder, tap **Select**, select all, then **Open**.
 4. Check the sign names (you can edit them) and tap **Import**. The videos are copied onto the phone, so Drive isn't needed afterwards.
 
@@ -42,9 +42,9 @@ Supported formats: `.mp4`, `.mov`, `.m4v` (best on iPhone); `.webm` only on rece
 
 ## Studying
 
-- The numbers are **new** (blue), **learning** (orange) and **to review** (green) cards.
+- Each deck shows how many signs you know, e.g. **10/24 connus**. A sign is known when your last answer on each of its cards was **Je sais**.
 - Choose **Both / Sign → Word / Word → Sign** on the home or deck screen.
-- Each deck introduces **10 new signs per day** by default (change it in the deck settings). The two cards of a sign are shown on different days so one doesn't give away the other.
+- The app introduces **10 new signs per day** in total, across all decks (change it in Réglages → Étude). The two cards of a sign are shown on different days so one doesn't give away the other.
 - Videos loop. Use **Speed** for slow motion (0.75× / 0.5×) and tap the video to pause.
 - ↶ undoes the last answer. On a computer: Space = show answer / Je sais, 1–3 = answer, Z = undo.
 

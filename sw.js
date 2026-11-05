@@ -1,7 +1,7 @@
 // Service worker: makes the app work offline.
 // Strategy: serve from cache immediately, refresh the cache in the background
 // (so an update you publish shows up the next time the app is opened).
-const CACHE = 'signcards-v3';
+const CACHE = 'signcards-v4';
 const ASSETS = [
   './',
   './index.html',

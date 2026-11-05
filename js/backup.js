@@ -10,7 +10,8 @@ export async function buildExport() {
     app: 'signcards',
     version: 1,
     exportedAt: new Date().toISOString(),
-    decks: decks.map((d) => ({ name: d.name, newPerDay: d.newPerDay })),
+    newPerDay: await db.getNewPerDay(),
+    decks: decks.map((d) => ({ name: d.name })),
     cards: [
       ...cards
         .filter((c) => deckById.has(c.deckId) && signById.has(c.signId))
@@ -46,11 +47,9 @@ export async function importProgress(json) {
 
   for (const d of json.decks || []) {
     if (!d.name) continue;
-    if (!(await db.findDeckByName(d.name))) {
-      const id = await db.createDeck(d.name);
-      if (d.newPerDay != null) await db.put('decks', { ...(await db.get('decks', id)), newPerDay: d.newPerDay });
-    }
+    if (!(await db.findDeckByName(d.name))) await db.createDeck(d.name);
   }
+  if (Number.isFinite(json.newPerDay)) await db.setNewPerDay(json.newPerDay);
 
   const [decks, signs, cards] = await Promise.all([db.getAll('decks'), db.getAll('signs'), db.getAll('cards')]);
   const deckById = new Map(decks.map((d) => [d.id, d]));

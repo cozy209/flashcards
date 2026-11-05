@@ -84,9 +84,13 @@ export async function findDeckByName(name) {
 }
 
 export async function createDeck(name) {
-  const newPerDay = await getMeta('defaultNewPerDay', 10);
-  return put('decks', { name: name.trim(), createdAt: Date.now(), newPerDay });
+  return put('decks', { name: name.trim(), createdAt: Date.now() });
 }
+
+// New signs per day: one setting for all decks together.
+export const DEFAULT_NEW_PER_DAY = 10;
+export const getNewPerDay = () => getMeta('defaultNewPerDay', DEFAULT_NEW_PER_DAY);
+export const setNewPerDay = (n) => setMeta('defaultNewPerDay', n);
 
 export function deleteDeck(deckId) {
   return tx(['decks', 'signs', 'cards', 'videos'], 'readwrite', async (s) => {

@@ -15,7 +15,7 @@ export const MAX_INTERVAL = 36500;    // days
 export const LEARN_AHEAD = 20 * MIN;  // show learning cards early when nothing else is left
 export const DAY_START_HOUR = 4;      // a "day" rolls over at 4am, like Anki
 
-export const SRS_FIELDS = ['state', 'step', 'ease', 'interval', 'due', 'reps', 'lapses', 'lastReview', 'firstReview'];
+export const SRS_FIELDS = ['state', 'step', 'ease', 'interval', 'due', 'reps', 'lapses', 'lastReview', 'firstReview', 'lastRating'];
 
 export function newCardFields() {
   return { state: 'new', step: 0, ease: START_EASE, interval: 0, due: 0, reps: 0, lapses: 0, lastReview: null, firstReview: null };
@@ -42,6 +42,7 @@ export function schedule(card, rating, now = Date.now()) {
   const c = { ...card };
   c.reps = (c.reps || 0) + 1;
   c.lastReview = now;
+  c.lastRating = rating;
   if (!c.firstReview) c.firstReview = now;
   if (!c.ease) c.ease = START_EASE;
 

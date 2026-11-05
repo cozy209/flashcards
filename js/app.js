@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { Session, deckCounts } from './study.js';
+import { Session, deckProgress } from './study.js';
 import { formatDuration } from './srs.js';
 import { ACCEPT, parseSignName, videoType, naturalCompare, isVideoEntry, deckNameFromZip } from './importer.js';
 import { readZip, ZipError } from './zip.js';
@@ -50,12 +50,10 @@ function header(title, { back, right } = {}) {
   </header>`;
 }
 
-function countsHtml(c) {
-  return `<span class="counts">
-    <span class="c-new" title="Nouvelles">${c.newCount}</span>
-    <span class="c-learn" title="En apprentissage">${c.learnCount}</span>
-    <span class="c-due" title="À réviser">${c.reviewCount}</span>
-  </span>`;
+function knownHtml({ known, total }) {
+  const pct = total ? Math.round((known / total) * 100) : 0;
+  return `<span class="known"><b>${known}/${total}</b> ${known < 2 ? 'connu' : 'connus'}</span>
+    <span class="known-bar" aria-hidden="true"><span style="width:${pct}%"></span></span>`;
 }
 
 function modePicker() {
@@ -175,7 +173,7 @@ async function route() {
 
 async function viewDecks(ctx) {
   const decks = (await db.getAll('decks')).sort(byName);
-  const rows = await Promise.all(decks.map(async (d) => ({ d, c: await deckCounts(d), n: await db.count('signs', 'deckId', d.id) })));
+  const rows = await Promise.all(decks.map(async (d) => ({ d, p: await deckProgress(d.id) })));
   if (!ctx.alive()) return;
 
   app.innerHTML = `
@@ -183,23 +181,21 @@ async function viewDecks(ctx) {
     <main class="page">
       ${rows.length ? `
         <ul class="list">
-          ${rows.map(({ d, c, n }) => `
+          ${rows.map(({ d, p }) => `
             <li class="deck-item">
               <a class="deck-main" href="#/deck/${d.id}">
                 <span class="deck-name">${esc(d.name)}</span>
-                <span class="muted">${plural(n, 'signe')}</span>
+                ${knownHtml(p)}
               </a>
-              ${countsHtml(c)}
               <a class="btn small primary" href="#/study?decks=${d.id}">Étudier</a>
             </li>`).join('')}
         </ul>
-        <p class="legend"><span class="c-new">nouvelles</span> · <span class="c-learn">en cours</span> · <span class="c-due">à réviser</span></p>
         ${modePicker()}
-        ${rows.length > 1 ? '<a class="btn primary block" href="#/study?decks=all">Étudier tous les paquets</a>' : ''}
+        ${rows.length > 1 ? '<a class="btn primary block" href="#/study?decks=all">Étudier tous les decks</a>' : ''}
       ` : `
         <div class="empty">
           <div class="empty-icon">🤟</div>
-          <h2>Aucun paquet pour l'instant</h2>
+          <h2>Aucun deck pour l'instant</h2>
           <p>Importez une collection de vidéos de signes. Le nom de chaque fichier vidéo devient le nom du signe.</p>
         </div>`}
       <a class="btn block" href="#/import">${ICON.plus} Importer des vidéos</a>
@@ -210,7 +206,7 @@ async function viewDecks(ctx) {
 async function viewDeck(ctx, [id]) {
   const deck = await db.get('decks', Number(id));
   if (!deck) return location.replace('#/');
-  const [signs, counts] = await Promise.all([db.getAll('signs', 'deckId', deck.id), deckCounts(deck)]);
+  const [signs, progress] = await Promise.all([db.getAll('signs', 'deckId', deck.id), deckProgress(deck.id)]);
   if (!ctx.alive()) return;
   signs.sort(byName);
   const signById = new Map(signs.map((s) => [s.id, s]));
@@ -218,7 +214,7 @@ async function viewDeck(ctx, [id]) {
   app.innerHTML = `
     ${header(deck.name, { back: '#/' })}
     <main class="page">
-      <div class="stat-row">${countsHtml(counts)}<span class="muted">${plural(signs.length, 'signe')}</span></div>
+      <div class="stat-row">${knownHtml(progress)}</div>
       ${modePicker()}
       <a class="btn primary block" href="#/study?decks=${deck.id}">Étudier</a>
       <a class="btn block" href="#/import/${deck.id}">${ICON.plus} Ajouter des vidéos</a>
@@ -233,12 +229,9 @@ async function viewDeck(ctx, [id]) {
           </li>`).join('')}
       </ul>
 
-      <h2>Réglages du paquet</h2>
-      <label class="field"><span>Nouveaux signes par jour</span>
-        <input type="number" id="npd" inputmode="numeric" min="0" max="999" value="${deck.newPerDay ?? 10}">
-      </label>
-      <button type="button" class="btn block" id="rename">Renommer le paquet</button>
-      <button type="button" class="btn danger block" id="delete">Supprimer le paquet</button>
+      <h2>Deck</h2>
+      <button type="button" class="btn block" id="rename">Renommer le deck</button>
+      <button type="button" class="btn danger block" id="delete">Supprimer le deck</button>
     </main>`;
   bindModePicker();
 
@@ -294,19 +287,11 @@ async function viewDeck(ctx, [id]) {
     });
   });
 
-  $('#npd').addEventListener('change', async (e) => {
-    const n = Math.max(0, Math.min(999, Math.round(Number(e.target.value) || 0)));
-    e.target.value = n;
-    deck.newPerDay = n;
-    await db.put('decks', deck);
-    toast('Enregistré');
-  });
-
   $('#rename').addEventListener('click', async () => {
-    const name = prompt('Nom du paquet', deck.name)?.trim();
+    const name = prompt('Nom du deck', deck.name)?.trim();
     if (!name || name === deck.name) return;
     const other = await db.findDeckByName(name);
-    if (other && other.id !== deck.id) return toast('Un paquet porte déjà ce nom');
+    if (other && other.id !== deck.id) return toast('Un deck porte déjà ce nom');
     deck.name = name;
     await db.put('decks', deck);
     route();
@@ -315,7 +300,7 @@ async function viewDeck(ctx, [id]) {
   $('#delete').addEventListener('click', async () => {
     if (!confirm(`Supprimer « ${deck.name} », ${signs.length < 2 ? 'sa vidéo' : `ses ${signs.length} vidéos`} et toute la progression ? Cette action est irréversible.`)) return;
     await db.deleteDeck(deck.id);
-    toast('Paquet supprimé');
+    toast('Deck supprimé');
     location.hash = '#/';
   });
 }
@@ -330,13 +315,13 @@ async function viewImport(ctx, [deckId]) {
   app.innerHTML = `
     ${header('Importer des vidéos', { back: preselect ? `#/deck/${preselect.id}` : '#/' })}
     <main class="page">
-      <label class="field"><span>Paquet</span>
+      <label class="field"><span>Deck</span>
         <select id="deck">
           ${decks.map((d) => `<option value="${d.id}" ${d === preselect ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
-          <option value="new" ${preselect ? '' : 'selected'}>+ Nouveau paquet…</option>
+          <option value="new" ${preselect ? '' : 'selected'}>+ Nouveau deck…</option>
         </select>
       </label>
-      <label class="field" id="newWrap"><span>Nom du nouveau paquet</span>
+      <label class="field" id="newWrap"><span>Nom du nouveau deck</span>
         <input id="newName" placeholder="ex. Alphabet" autocomplete="off">
       </label>
       <input type="file" id="file" multiple accept="${ACCEPT}" hidden>
@@ -345,7 +330,7 @@ async function viewImport(ctx, [deckId]) {
       <button type="button" class="btn block" id="pickZip">Importer une collection (.zip)…</button>
       <p class="hint">Sur iPhone, touchez <b>Choisir des fichiers</b> (ou <b>Parcourir</b>), ouvrez <b>Google Drive</b> ou <b>Téléchargements</b>, touchez <b>Sélectionner</b> et choisissez toutes les vidéos d'une collection.
         Évitez la Photothèque : elle renomme les vidéos. Vous pouvez choisir plusieurs fois pour ajouter d'autres fichiers.</p>
-      <p class="hint">Ou choisissez le <b>.zip</b> d'une collection : le paquet prend le nom du fichier zip.</p>
+      <p class="hint">Ou choisissez le <b>.zip</b> d'une collection : le deck prend le nom du fichier zip.</p>
       <div id="preview"></div>
     </main>`;
 
@@ -364,7 +349,7 @@ async function viewImport(ctx, [deckId]) {
     const seen = new Set();
     for (const it of items) {
       const key = it.name.trim().toLowerCase();
-      it.dup = existing.has(key) ? 'déjà dans le paquet' : seen.has(key) ? 'doublon' : '';
+      it.dup = existing.has(key) ? 'déjà dans le deck' : seen.has(key) ? 'doublon' : '';
       if (it.checked) seen.add(key);
       if (it.fresh) { it.checked = !it.dup; it.fresh = false; if (it.checked) seen.add(key); }
     }
@@ -462,7 +447,7 @@ async function viewImport(ctx, [deckId]) {
     }
     items.sort((a, b) => naturalCompare(a.name, b.name));
     renderPreview();
-    toast(match ? `Ajout au paquet existant « ${match.name} »` : `Nouveau paquet « ${deckName} »`);
+    toast(match ? `Ajout au deck existant « ${match.name} »` : `Nouveau deck « ${deckName} »`);
   });
 
   async function runImport() {
@@ -470,7 +455,7 @@ async function viewImport(ctx, [deckId]) {
     let deck;
     if (deckSel.value === 'new') {
       const name = $('#newName').value.trim();
-      if (!name) { toast('Saisissez un nom pour le nouveau paquet'); $('#newName').focus(); return; }
+      if (!name) { toast('Saisissez un nom pour le nouveau deck'); $('#newName').focus(); return; }
       deck = await db.findDeckByName(name);
       if (!deck) deck = await db.get('decks', await db.createDeck(name));
     } else {
@@ -540,7 +525,9 @@ async function viewStudy(ctx, _args, params) {
   let busy = false;
 
   const updateCounts = () => {
-    $('#counts').innerHTML = countsHtml(session.counts());
+    const c = session.counts();
+    const left = c.newCount + c.learnCount + c.reviewCount;
+    $('#counts').innerHTML = `<span class="left">${left} ${left < 2 ? 'restante' : 'restantes'}</span>`;
     $('#undo').disabled = !session.history.length;
   };
 
@@ -602,7 +589,7 @@ async function viewStudy(ctx, _args, params) {
       ? `<div class="done"><div class="done-icon">⏳</div><h2>Bien joué !</h2>
            <p>D'autres cartes dans ${formatDuration(due - Date.now())}. Gardez cet écran ouvert ou revenez plus tard.</p></div>`
       : `<div class="done"><div class="done-icon">🎉</div><h2>${session.answered ? 'Terminé pour aujourd\'hui' : 'Rien à étudier pour le moment'}</h2>
-           <p>${session.answered ? `Vous avez répondu à ${plural(session.answered, 'carte')}.` : 'Revenez demain, ou augmentez « Nouveaux signes par jour » dans les réglages du paquet.'}</p></div>`;
+           <p>${session.answered ? `Vous avez répondu à ${plural(session.answered, 'carte')}.` : 'Revenez demain, ou augmentez « Nouveaux signes par jour » dans les Réglages.'}</p></div>`;
     $('#actions').innerHTML = `<a class="btn block" href="${back}">Retour</a>`;
     updateCounts();
     if (due) timer = setTimeout(next, Math.max(1000, due - Date.now() + 500));
@@ -634,7 +621,7 @@ async function viewStudy(ctx, _args, params) {
 }
 
 async function viewSettings(ctx) {
-  const [defNpd, pendingCount] = await Promise.all([db.getMeta('defaultNewPerDay', 10), db.count('pending')]);
+  const [npd, pendingCount] = await Promise.all([db.getNewPerDay(), db.count('pending')]);
   if (!ctx.alive()) return;
   const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 
@@ -649,15 +636,16 @@ async function viewSettings(ctx) {
       </section>
 
       <section>
-        <h2>Nouveaux paquets</h2>
-        <label class="field"><span>Nouveaux signes par jour (par défaut)</span>
-          <input type="number" id="defNpd" inputmode="numeric" min="0" max="999" value="${defNpd}">
+        <h2>Étude</h2>
+        <label class="field"><span>Nouveaux signes par jour</span>
+          <input type="number" id="npd" inputmode="numeric" min="0" max="999" value="${npd}">
         </label>
+        <p class="hint">Pour tous les decks ensemble : c'est la même limite que vous étudiiez un deck ou tous. Les révisions ne sont pas limitées. Mettez 0 pour faire une pause dans les nouveaux signes.</p>
       </section>
 
       <section>
         <h2>Sauvegarde de la progression</h2>
-        <p class="hint">Enregistre vos paquets et votre progression (pas les vidéos) dans un petit fichier. Après une réinstallation, importez-le ici puis réimportez les vidéos : la progression est retrouvée grâce aux noms des paquets et des signes.</p>
+        <p class="hint">Enregistre vos decks et votre progression (pas les vidéos) dans un petit fichier. Après une réinstallation, importez-le ici puis réimportez les vidéos : la progression est retrouvée grâce aux noms des decks et des signes.</p>
         <button type="button" class="btn block" id="export">Exporter la progression</button>
         <button type="button" class="btn block" id="importBtn">Importer une progression…</button>
         <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -700,10 +688,10 @@ async function viewSettings(ctx) {
     if (ok) route();
   });
 
-  $('#defNpd').addEventListener('change', async (e) => {
+  $('#npd').addEventListener('change', async (e) => {
     const n = Math.max(0, Math.min(999, Math.round(Number(e.target.value) || 0)));
     e.target.value = n;
-    await db.setMeta('defaultNewPerDay', n);
+    await db.setNewPerDay(n);
     toast('Enregistré');
   });
 
@@ -723,7 +711,7 @@ async function viewSettings(ctx) {
   });
 
   $('#wipe').addEventListener('click', async () => {
-    if (!confirm('Supprimer TOUS les paquets, vidéos et la progression de cet appareil ?')) return;
+    if (!confirm('Supprimer TOUS les decks, vidéos et la progression de cet appareil ?')) return;
     if (!confirm('Vraiment ? Cette action est irréversible.')) return;
     await db.deleteEverything();
     location.hash = '#/';

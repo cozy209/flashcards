@@ -219,11 +219,11 @@ input:focus, select:focus, .btn:focus-visible { outline: 2px solid var(--primary
 .deck-name { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .deck-main .muted { font-size: 0.85rem; }
 
-.counts { display: inline-flex; gap: 0.55rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.c-new { color: var(--new); }
-.c-learn { color: var(--learn); }
-.c-due { color: var(--due); }
-.legend { text-align: center; font-size: 0.8rem; margin: 0.5rem 0 0; }
+.known { color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.known b { color: var(--good); }
+.known-bar { display: block; height: 4px; margin-top: 0.3rem; border-radius: 2px; background: var(--border); overflow: hidden; }
+.known-bar > span { display: block; height: 100%; background: var(--good); }
+.stat-row .known-bar { flex: 1; margin: 0 0 0 0.75rem; }
 
 .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.25rem 0; font-size: 1.1rem; }
 
@@ -292,7 +292,7 @@ input:focus, select:focus, .btn:focus-visible { outline: 2px solid var(--primary
   min-height: 100dvh;
 }
 .study .bar { justify-content: space-between; }
-.study #counts .counts { font-size: 1.05rem; gap: 0.9rem; }
+.study #counts .left { font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 .card-area {
   flex: 1;
   width: 100%;

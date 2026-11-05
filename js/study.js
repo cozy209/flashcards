@@ -7,17 +7,23 @@ const modeRank = (m) => (m === 'video2word' ? 0 : 1);
 
 export class Session {
   static async load(deckIds, mode = 'both') {
-    const decks = (await Promise.all(deckIds.map((id) => db.get('decks', id)))).filter(Boolean);
-    const cards = [];
+    const [decks, allCards, newPerDay] = await Promise.all([
+      Promise.all(deckIds.map((id) => db.get('decks', id))).then((l) => l.filter(Boolean)),
+      db.getAll('cards'),
+      db.getNewPerDay(),
+    ]);
+    const ids = new Set(decks.map((d) => d.id));
+    const cards = allCards.filter((c) => ids.has(c.deckId));
     const signs = new Map();
-    for (const d of decks) {
-      cards.push(...(await db.getAll('cards', 'deckId', d.id)));
-      for (const s of await db.getAll('signs', 'deckId', d.id)) signs.set(s.id, s);
-    }
-    return new Session(decks, cards, signs, mode);
+    for (const d of decks) for (const s of await db.getAll('signs', 'deckId', d.id)) signs.set(s.id, s);
+    // The daily limit is shared by all decks, so count what was introduced today in any deck.
+    const today = dayStart();
+    const introducedToday = allCards.filter((c) => c.firstReview >= today).length;
+    return new Session(decks, cards, signs, mode, Date.now(), { newPerDay, introducedToday });
   }
 
-  constructor(decks, cards, signs, mode = 'both', now = Date.now()) {
+  /** opts.newPerDay: global limit; opts.introducedToday: new cards already started today in all decks. */
+  constructor(decks, cards, signs, mode = 'both', now = Date.now(), opts = {}) {
     this.decks = new Map(decks.map((d) => [d.id, d]));
     this.signs = signs;
     this.mode = mode;
@@ -30,6 +36,8 @@ export class Session {
       if (!this.bySign.has(c.signId)) this.bySign.set(c.signId, []);
       this.bySign.get(c.signId).push(c);
     }
+    this.newPerDay = opts.newPerDay ?? 10;
+    this.introducedToday = opts.introducedToday ?? cards.filter((c) => c.firstReview >= this.today).length;
     this.newQueue = this.buildNewQueue(decks);
     this.sinceNew = 0;
     this.history = [];
@@ -42,27 +50,25 @@ export class Session {
   }
 
   buildNewQueue(decks) {
+    const left = Math.max(0, this.newPerDay - this.introducedToday);
     const perDeck = decks.map((d) => {
-      const introduced = this.allCards.filter((c) => c.deckId === d.id && c.firstReview >= this.today).length;
-      let left = Math.max(0, (d.newPerDay ?? 10) - introduced);
       const fresh = this.cards
         .filter((c) => c.deckId === d.id && c.state === 'new')
         .sort((a, b) => a.signId - b.signId || modeRank(a.mode) - modeRank(b.mode));
       const usedSigns = new Set();
       const ids = [];
       for (const c of fresh) {
-        if (left <= 0) break;
+        if (ids.length >= left) break;
         if (usedSigns.has(c.signId) || this.siblingSeenToday(c)) continue;
         usedSigns.add(c.signId);
         ids.push(c.id);
-        left--;
       }
       return ids;
     });
     // Round-robin across decks so "study all" mixes collections.
     const queue = [];
     for (let i = 0; perDeck.some((l) => i < l.length); i++) for (const l of perDeck) if (i < l.length) queue.push(l[i]);
-    return queue;
+    return queue.slice(0, left);
   }
 
   learningCards() {
@@ -135,8 +141,26 @@ export class Session {
   }
 }
 
-/** New / learning / review counts for a deck (both modes). */
-export async function deckCounts(deck) {
-  const session = await Session.load([deck.id], 'both');
-  return session.counts();
+/** A card is known when its last answer was "Je sais" (older cards without lastRating: once graduated). */
+export const cardKnown = (c) => c.state !== 'new' && (c.lastRating != null ? c.lastRating === 3 : c.state === 'review');
+
+/** Known signs: studied, and the last answer on every card seen so far was "Je sais". */
+export function knownSigns(cards) {
+  const bySign = new Map();
+  for (const c of cards) {
+    if (!bySign.has(c.signId)) bySign.set(c.signId, []);
+    bySign.get(c.signId).push(c);
+  }
+  let known = 0;
+  for (const list of bySign.values()) {
+    const seen = list.filter((c) => c.state !== 'new');
+    if (seen.length && seen.every(cardKnown)) known++;
+  }
+  return known;
+}
+
+/** { known, total } signs for a deck. */
+export async function deckProgress(deckId) {
+  const [cards, total] = await Promise.all([db.getAll('cards', 'deckId', deckId), db.count('signs', 'deckId', deckId)]);
+  return { known: knownSigns(cards), total };
 }

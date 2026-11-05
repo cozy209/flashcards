@@ -1,7 +1,7 @@
 // Run with: node tests/srs.test.mjs
 import assert from 'node:assert/strict';
 import { schedule, newCardFields, dayStart, nextLabel, DAY, MIN } from '../js/srs.js';
-import { Session } from '../js/study.js';
+import { Session, knownSigns } from '../js/study.js';
 
 let passed = 0;
 const test = (name, fn) => { fn(); passed++; console.log(`✓ ${name}`); };
@@ -72,7 +72,7 @@ test('session: respects new-per-day and shows only one card per sign per day', (
   const cards = [];
   let id = 1;
   for (let s = 1; s <= 5; s++) for (const mode of ['video2word', 'word2video']) cards.push({ id: id++, deckId: 1, signId: s, mode, ...newCardFields() });
-  const session = new Session([{ id: 1, name: 'A', newPerDay: 3 }], cards, new Map(), 'both', now);
+  const session = new Session([{ id: 1, name: 'A' }], cards, new Map(), 'both', now, { newPerDay: 3 });
   assert.equal(session.counts(now).newCount, 3);
   const first = session.next(now);
   assert.equal(first.signId, 1);
@@ -81,10 +81,36 @@ test('session: respects new-per-day and shows only one card per sign per day', (
 
 test('session: learning card comes back after its delay', async () => {
   const cards = [{ id: 1, deckId: 1, signId: 1, mode: 'video2word', ...newCardFields() }];
-  const s = new Session([{ id: 1, name: 'A', newPerDay: 10 }], cards, new Map(), 'both', now);
+  const s = new Session([{ id: 1, name: 'A' }], cards, new Map(), 'both', now, { newPerDay: 10 });
   const c = s.next(now);
   Object.assign(c, schedule(c, 1, now)); // Again
   assert.equal(s.next(now + 2 * MIN), c);
+});
+
+test('session: new-per-day limit is shared by all decks', () => {
+  const cards = [];
+  let id = 1;
+  for (const deckId of [1, 2]) for (let s = 1; s <= 5; s++) cards.push({ id: id++, deckId, signId: deckId * 10 + s, mode: 'video2word', ...newCardFields() });
+  const decks = [{ id: 1, name: 'A' }, { id: 2, name: 'B' }];
+  assert.equal(new Session(decks, cards, new Map(), 'both', now, { newPerDay: 4 }).counts(now).newCount, 4);
+  assert.equal(new Session(decks, cards, new Map(), 'both', now, { newPerDay: 4, introducedToday: 3 }).counts(now).newCount, 1);
+});
+
+test('known signs: last answer "Je sais" on every card seen', () => {
+  const card = (signId, rating) => {
+    const c = { signId, ...newCardFields() };
+    return rating ? schedule(c, rating, now) : c;
+  };
+  const cards = [
+    card(1, 3), card(1, 3),       // both right → known
+    card(2, 3), card(2),          // one right, other not seen yet → known
+    card(3, 3), card(3, 2),       // one Difficile → not known
+    card(4, 1),                   // À revoir → not known
+    card(5), card(5),             // never studied → not known
+  ];
+  assert.equal(knownSigns(cards), 2);
+  // Older cards without lastRating count once graduated.
+  assert.equal(knownSigns([{ signId: 9, state: 'review' }, { signId: 8, state: 'learning' }]), 1);
 });
 
 console.log(`\n${passed} tests passed`);
