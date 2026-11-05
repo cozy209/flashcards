@@ -15,7 +15,7 @@ The app is a set of static files. It has to be served over HTTPS so iPhone can i
 1. Create a free account at <https://github.com> and click **New repository** (e.g. `sign-cards`, Public).
 2. On the repository page click **Add file → Upload files**, then drag in **everything in this folder** (`index.html`, `manifest.webmanifest`, `sw.js`, and the `css`, `js`, `icons` folders). Commit.
 3. Go to **Settings → Pages**. Under *Branch*, choose `main` and `/ (root)`, then click **Save**.
-4. After a minute your app is at `[https://cozy209.github.io/sign-cards/](https://cozy209.github.io/flashcards/)`.
+4. After a minute your app is at [https://cozy209.github.io/sign-cards/](https://cozy209.github.io/flashcards/).
 
 Only the app code goes on GitHub. Your videos stay on your phone.
 
