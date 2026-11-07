@@ -233,8 +233,10 @@ input:focus, select:focus, .btn:focus-visible { outline: 2px solid var(--primary
 
 .known { color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
 .known b { color: var(--good); }
-.known-bar { display: block; height: 4px; margin-top: 0.3rem; border-radius: 2px; background: var(--border); overflow: hidden; }
-.known-bar > span { display: block; height: 100%; background: var(--good); }
+.known-bar { display: flex; height: 6px; margin-top: 0.3rem; border-radius: 3px; background: var(--border); overflow: hidden; }
+.known-bar > span { height: 100%; }
+.known-bar .seg-right { background: var(--good); }
+.known-bar .seg-wrong { background: var(--hard); }
 .stat-row .known-bar { flex: 1; margin: 0 0 0 0.75rem; }
 
 .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.25rem 0; font-size: 1.1rem; }

@@ -1,7 +1,7 @@
 // A study session: the signs are drawn once at the start (weighted by progress),
 // each sign is shown once, and answers update the sign's progress for next time.
 import * as db from './db.js';
-import { applyAnswer, drawSigns, isKnown, progressOf } from './progress.js';
+import { applyAnswer, drawSigns, isKnown, progressOf, AGAIN, HARD, GOOD } from './progress.js';
 
 export class Session {
   static async load(deckIds, mode = 'both') {
@@ -56,8 +56,19 @@ export class Session {
 /** Number of known signs (more than 5 "Je sais" in a row). */
 export const knownSigns = (signs) => signs.filter((s) => isKnown(progressOf(s))).length;
 
-/** { known, total } signs for a deck. */
+/** Signs by last answer: right = "Je sais", wrong = "À revoir" or "Difficile", the rest never shown. */
+export function answerSplit(signs) {
+  let right = 0, wrong = 0;
+  for (const s of signs) {
+    const r = progressOf(s).lastRating;
+    if (r === GOOD) right++;
+    else if (r === AGAIN || r === HARD) wrong++;
+  }
+  return { right, wrong };
+}
+
+/** { known, total, right, wrong } signs for a deck. */
 export async function deckProgress(deckId) {
   const signs = await db.getAll('signs', 'deckId', deckId);
-  return { known: knownSigns(signs), total: signs.length };
+  return { known: knownSigns(signs), total: signs.length, ...answerSplit(signs) };
 }

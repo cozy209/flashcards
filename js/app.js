@@ -50,10 +50,14 @@ function header(title, { back, left, right } = {}) {
   </header>`;
 }
 
-function knownHtml({ known, total }) {
-  const pct = total ? Math.round((known / total) * 100) : 0;
+/** "3/10 connus" + bar: green = last answer Je sais, orange = À revoir / Difficile, grey = never shown. */
+function knownHtml({ known, total, right = 0, wrong = 0 }) {
+  const pct = (n) => (total ? (n / total) * 100 : 0);
+  const seen = total - right - wrong;
   return `<span class="known"><b>${known}/${total}</b> ${known < 2 ? 'connu' : 'connus'}</span>
-    <span class="known-bar" aria-hidden="true"><span style="width:${pct}%"></span></span>`;
+    <span class="known-bar" role="img" aria-label="${right} réussis, ${wrong} ratés ou difficiles, ${seen} jamais vus">
+      <span class="seg-right" style="width:${pct(right)}%"></span><span class="seg-wrong" style="width:${pct(wrong)}%"></span>
+    </span>`;
 }
 
 function modePicker() {

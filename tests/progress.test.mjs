@@ -1,7 +1,7 @@
 // Run with: node tests/progress.test.mjs
 import assert from 'node:assert/strict';
 import { weight, applyAnswer, drawSigns, isKnown, emptyProgress, fromLegacyCards, AGAIN, HARD, GOOD } from '../js/progress.js';
-import { Session, knownSigns } from '../js/study.js';
+import { Session, knownSigns, answerSplit } from '../js/study.js';
 
 let passed = 0;
 const test = async (name, fn) => { await fn(); passed++; console.log(`✓ ${name}`); };
@@ -105,6 +105,15 @@ await test('migration from the old per-direction cards uses the most recent answ
   assert.equal(fromLegacyCards([{ lastReview: 5, state: 'relearning', reps: 3 }]).lastRating, HARD);
   // Old "Easy" (4) counts as Je sais.
   assert.equal(fromLegacyCards([{ lastReview: 5, lastRating: 4, reps: 1 }]).lastRating, GOOD);
+});
+
+await test('progress bar split: right / wrong-or-hard / never shown', () => {
+  const signs = [
+    { progress: answers(GOOD) }, { progress: answers(AGAIN, GOOD) }, { progress: answers(GOOD, GOOD, GOOD, GOOD, GOOD, GOOD) },
+    { progress: answers(AGAIN) }, { progress: answers(GOOD, HARD) },
+    {}, {}, {}, {}, {},
+  ];
+  assert.deepEqual(answerSplit(signs), { right: 3, wrong: 2 });
 });
 
 console.log(`\n${passed} tests passed`);

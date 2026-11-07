@@ -1,7 +1,7 @@
 // Service worker: makes the app work offline.
 // Strategy: serve from cache immediately, refresh the cache in the background.
 // A new version (new CACHE name) installs in the background; app.js then reloads the page.
-const CACHE = 'signcards-v9';
+const CACHE = 'signcards-v10';
 const ASSETS = [
   './',
   './index.html',
