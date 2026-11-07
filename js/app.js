@@ -41,9 +41,9 @@ const ICON = {
   chevron: svg('<path d="M9 18l6-6-6-6"/>'),
 };
 
-function header(title, { back, right } = {}) {
+function header(title, { back, left, right } = {}) {
   return `<header class="bar">
-    ${back ? `<a class="icon-btn" href="${back}" aria-label="Retour">${ICON.back}</a>` : '<span class="icon-btn"></span>'}
+    ${back ? `<a class="icon-btn" href="${back}" aria-label="Retour">${ICON.back}</a>` : left || '<span class="icon-btn"></span>'}
     <h1>${esc(title)}</h1>
     ${right || '<span class="icon-btn"></span>'}
   </header>`;
@@ -176,30 +176,86 @@ async function viewDecks(ctx) {
   if (!ctx.alive()) return;
 
   app.innerHTML = `
-    ${header('Flashcards', { right: `<a class="icon-btn" href="#/settings" aria-label="Réglages">${ICON.gear}</a>` })}
-    <main class="page">
+    ${header('Flashcards', {
+      left: rows.length > 1 ? '<button type="button" class="text-btn" id="selLeft">Sélectionner</button>' : undefined,
+      right: `<span class="bar-right"><button type="button" class="text-btn" id="selDone" hidden>OK</button><a class="icon-btn" id="gear" href="#/settings" aria-label="Réglages">${ICON.gear}</a></span>`,
+    })}
+    <main class="page" id="home">
       ${rows.length ? `
         <ul class="list">
           ${rows.map(({ d, p }) => `
-            <li class="deck-item">
+            <li class="deck-item" data-id="${d.id}">
+              <span class="deck-check" role="checkbox" aria-checked="false" aria-label="Sélectionner ${esc(d.name)}"></span>
               <a class="deck-main" href="#/deck/${d.id}">
                 <span class="deck-name">${esc(d.name)}</span>
                 ${knownHtml(p)}
               </a>
-              <a class="btn small primary" href="#/study?decks=${d.id}">Étudier</a>
+              <a class="btn small primary deck-study" href="#/study?decks=${d.id}">Étudier</a>
             </li>`).join('')}
         </ul>
         ${modePicker()}
-        ${rows.length > 1 ? '<a class="btn primary block" href="#/study?decks=all">Étudier tous les decks</a>' : ''}
+        ${rows.length > 1 ? '<a class="btn primary block" id="studyBtn" href="#/study?decks=all">Étudier tous les decks</a>' : ''}
       ` : `
         <div class="empty">
           <div class="empty-icon">🤟</div>
           <h2>Aucun deck pour l'instant</h2>
           <p>Importez une collection de vidéos de signes. Le nom de chaque fichier vidéo devient le nom du signe.</p>
         </div>`}
-      <a class="btn block" href="#/import">${ICON.plus} Importer des vidéos</a>
+      <a class="btn block" id="importBtn" href="#/import">${ICON.plus} Importer des vidéos</a>
     </main>`;
   bindModePicker();
+  if (rows.length > 1) bindDeckSelection(rows.map(({ d }) => d.id));
+}
+
+/** iPhone-style selection: "Sélectionner" shows checkboxes and turns the study button into "Étudier la sélection". */
+function bindDeckSelection(ids) {
+  const home = $('#home');
+  const selected = new Set();
+  let selecting = false;
+
+  const sync = () => {
+    home.classList.toggle('selecting', selecting);
+    $('#selLeft').textContent = !selecting ? 'Sélectionner' : selected.size === ids.length ? 'Aucun' : 'Tout';
+    $('#selDone').hidden = !selecting;
+    $('#gear').hidden = selecting;
+    $('#importBtn').hidden = selecting;
+    $$('.deck-item').forEach((li) => {
+      const on = selected.has(Number(li.dataset.id));
+      li.classList.toggle('checked', on);
+      $('.deck-check', li).setAttribute('aria-checked', on);
+    });
+    const btn = $('#studyBtn');
+    const n = selected.size;
+    if (!selecting) {
+      btn.textContent = 'Étudier tous les decks';
+      btn.href = '#/study?decks=all';
+    } else {
+      btn.textContent = n ? `Étudier la sélection (${n})` : 'Étudier la sélection';
+      btn.href = n ? `#/study?decks=${ids.filter((id) => selected.has(id)).join(',')}` : '#/';
+    }
+    btn.classList.toggle('disabled', selecting && !n);
+  };
+
+  $('#selLeft').addEventListener('click', () => {
+    if (!selecting) selecting = true;
+    else if (selected.size === ids.length) selected.clear();
+    else ids.forEach((id) => selected.add(id));
+    sync();
+  });
+  $('#selDone').addEventListener('click', () => {
+    selecting = false;
+    selected.clear();
+    sync();
+  });
+  // While selecting, tapping a deck row checks it instead of opening the deck.
+  $$('.deck-item').forEach((li) => li.addEventListener('click', (e) => {
+    if (!selecting) return;
+    e.preventDefault();
+    const id = Number(li.dataset.id);
+    if (selected.has(id)) selected.delete(id); else selected.add(id);
+    sync();
+  }));
+  sync();
 }
 
 async function viewDeck(ctx, [id]) {
