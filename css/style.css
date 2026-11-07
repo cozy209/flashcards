@@ -218,6 +218,7 @@ input:focus, select:focus, .btn:focus-visible { outline: 2px solid var(--primary
 /* Selection mode on the home screen */
 .text-btn { min-width: 44px; height: 44px; padding: 0 0.25rem; border: 0; background: none; color: var(--primary); font: inherit; font-size: 1rem; cursor: pointer; white-space: nowrap; }
 .bar-right { display: flex; justify-content: flex-end; min-width: 44px; }
+.bar-left { display: flex; min-width: 44px; }
 .bar-right .text-btn { font-weight: 650; }
 .deck-check { display: none; flex-shrink: 0; width: 24px; height: 24px; border: 2px solid var(--muted); border-radius: 50%; }
 .selecting .deck-check { display: grid; place-items: center; }

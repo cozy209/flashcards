@@ -1,7 +1,7 @@
 // Service worker: makes the app work offline.
-// Strategy: serve from cache immediately, refresh the cache in the background
-// (so an update you publish shows up the next time the app is opened).
-const CACHE = 'signcards-v8';
+// Strategy: serve from cache immediately, refresh the cache in the background.
+// A new version (new CACHE name) installs in the background; app.js then reloads the page.
+const CACHE = 'signcards-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -20,7 +20,8 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's HTTP cache, so a new version never installs stale files.
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
@@ -41,7 +42,7 @@ self.addEventListener('fetch', (event) => {
     const cache = await caches.open(CACHE);
     const key = req.mode === 'navigate' ? './index.html' : req;
     const cached = await cache.match(key, { ignoreSearch: true });
-    const network = fetch(req)
+    const network = fetch(req, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok && res.type === 'basic') cache.put(key, res.clone());
         return res;

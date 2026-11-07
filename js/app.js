@@ -39,6 +39,7 @@ const ICON = {
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   undo: svg('<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>'),
   chevron: svg('<path d="M9 18l6-6-6-6"/>'),
+  select: svg('<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>'),
 };
 
 function header(title, { back, left, right } = {}) {
@@ -177,7 +178,7 @@ async function viewDecks(ctx) {
 
   app.innerHTML = `
     ${header('Flashcards', {
-      left: rows.length > 1 ? '<button type="button" class="text-btn" id="selLeft">Sélectionner</button>' : undefined,
+      left: rows.length > 1 ? `<span class="bar-left"><button type="button" class="icon-btn" id="selStart" aria-label="Sélectionner des decks">${ICON.select}</button><button type="button" class="text-btn" id="selAll" hidden>Tout</button></span>` : undefined,
       right: `<span class="bar-right"><button type="button" class="text-btn" id="selDone" hidden>OK</button><a class="icon-btn" id="gear" href="#/settings" aria-label="Réglages">${ICON.gear}</a></span>`,
     })}
     <main class="page" id="home">
@@ -215,7 +216,9 @@ function bindDeckSelection(ids) {
 
   const sync = () => {
     home.classList.toggle('selecting', selecting);
-    $('#selLeft').textContent = !selecting ? 'Sélectionner' : selected.size === ids.length ? 'Aucun' : 'Tout';
+    $('#selStart').hidden = selecting;
+    $('#selAll').hidden = !selecting;
+    $('#selAll').textContent = selected.size === ids.length ? 'Aucun' : 'Tout';
     $('#selDone').hidden = !selecting;
     $('#gear').hidden = selecting;
     $('#importBtn').hidden = selecting;
@@ -236,9 +239,9 @@ function bindDeckSelection(ids) {
     btn.classList.toggle('disabled', selecting && !n);
   };
 
-  $('#selLeft').addEventListener('click', () => {
-    if (!selecting) selecting = true;
-    else if (selected.size === ids.length) selected.clear();
+  $('#selStart').addEventListener('click', () => { selecting = true; sync(); });
+  $('#selAll').addEventListener('click', () => {
+    if (selected.size === ids.length) selected.clear();
     else ids.forEach((id) => selected.add(id));
     sync();
   });
@@ -780,6 +783,25 @@ const VIEWS = { '': viewDecks, deck: viewDeck, import: viewImport, study: viewSt
 window.addEventListener('hashchange', route);
 db.migrateProgress().catch((err) => console.error(err)).finally(route);
 
+// Updates: check whenever the app comes back to the foreground (iPhone rarely relaunches
+// home-screen apps), and reload once the new version is installed — but never mid-session.
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('Service worker failed', err));
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('./sw.js').then((reg) => {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
+  }).catch((err) => console.warn('Service worker failed', err));
+
+  let reloading = false;
+  const reloadWhenIdle = () => {
+    if (reloading) return;
+    if (location.hash.startsWith('#/study') || location.hash.startsWith('#/import')) {
+      window.addEventListener('hashchange', reloadWhenIdle, { once: true });
+      return;
+    }
+    reloading = true;
+    location.reload();
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) reloadWhenIdle(); });
 }
