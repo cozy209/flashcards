@@ -1,5 +1,6 @@
 // IndexedDB storage. Everything (decks, signs, progress, videos) lives on the device.
-// Progress is stored on each sign (`sign.progress`). The `cards` store is from the old
+// Progress is stored on each sign: `sign.progress` (mastery score, both modes) and
+// `sign.srs` (Anki schedule, Anki mode only). The `cards` store is from the old
 // per-direction scheduler: it is only read once to migrate old progress.
 import { emptyProgress, fromLegacyCards, DEFAULT_SESSION_SIZE } from './progress.js';
 
@@ -89,9 +90,17 @@ export async function createDeck(name) {
   return put('decks', { name: name.trim(), createdAt: Date.now() });
 }
 
-// Number of signs drawn per study session (all decks together).
+// Study settings (all decks together).
+export const STUDY_MODES = ['random', 'anki'];
+export const getStudyMode = async () => { const m = await getMeta('studyMode', 'random'); return STUDY_MODES.includes(m) ? m : 'random'; };
+export const setStudyMode = (m) => setMeta('studyMode', STUDY_MODES.includes(m) ? m : 'random');
+// Aléatoire: signs drawn per session.
 export const getSessionSize = () => getMeta('sessionSize', DEFAULT_SESSION_SIZE);
 export const setSessionSize = (n) => setMeta('sessionSize', n);
+// Anki: new signs per day.
+export const DEFAULT_NEW_PER_DAY = 10;
+export const getNewPerDay = () => getMeta('newPerDay', DEFAULT_NEW_PER_DAY);
+export const setNewPerDay = (n) => setMeta('newPerDay', n);
 
 export function deleteDeck(deckId) {
   return tx(['decks', 'signs', 'cards', 'videos'], 'readwrite', async (s) => {
@@ -115,30 +124,38 @@ const PENDING_KINDS = ['sign', ...MODES];
 export function addSign(deck, name, data, type) {
   return tx(['signs', 'videos', 'pending'], 'readwrite', async (s) => {
     let progress = emptyProgress();
+    let srs;
     const legacy = [];
     for (const kind of PENDING_KINDS) {
       const key = pendingKey(deck.name, name, kind);
       const pending = await reqP(s.pending.get(key));
       if (!pending) continue;
       if (kind === 'sign') {
-        const { deck: _d, sign: _s, ...fields } = pending.progress;
+        const { deck: _d, sign: _s, srs: pendingSrs, ...fields } = pending.progress;
         progress = { ...progress, ...fields };
+        if (pendingSrs) srs = pendingSrs;
       }
       else legacy.push(pending.progress);
       s.pending.delete(key);
     }
     if (!progress.lastReview && legacy.length) progress = fromLegacyCards(legacy);
-    const signId = await reqP(s.signs.add({ deckId: deck.id, name, createdAt: Date.now(), progress }));
+    const sign = { deckId: deck.id, name, createdAt: Date.now(), progress };
+    if (srs) sign.srs = srs;
+    const signId = await reqP(s.signs.add(sign));
     await reqP(s.videos.put({ signId, data, type, size: data.byteLength }));
     return signId;
   });
 }
 
-export function saveProgress(signId, progress) {
+/** Saves fields of a sign, e.g. { progress, srs }. An undefined value removes the field. */
+export function saveSign(signId, patch) {
   return tx('signs', 'readwrite', async (s) => {
     const sign = await reqP(s.signs.get(signId));
     if (!sign) return;
-    sign.progress = progress;
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) delete sign[k];
+      else sign[k] = v;
+    }
     await reqP(s.signs.put(sign));
   });
 }

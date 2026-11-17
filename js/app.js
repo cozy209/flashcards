@@ -3,6 +3,8 @@ import { Session, deckProgress } from './study.js';
 import { ACCEPT, parseSignName, videoType, naturalCompare, isVideoEntry, deckNameFromZip } from './importer.js';
 import { readZip, ZipError } from './zip.js';
 import { buildExport, shareOrDownload, importProgress } from './backup.js';
+import { formatDuration } from './srs.js';
+import { KNOWN_MASTERY, START_MASTERY, MASTERY_DELTA, AGAIN, GOOD } from './progress.js';
 
 const app = document.getElementById('app');
 // Answer buttons → rating (see progress.js for the weights).
@@ -50,13 +52,16 @@ function header(title, { back, left, right } = {}) {
   </header>`;
 }
 
-/** "3/10 connus" + bar: green = last answer Je sais, orange = À revoir / Difficile, grey = never shown. */
-function knownHtml({ known, total, right = 0, wrong = 0 }) {
+/**
+ * "3/10 connus" + bar coloured by mastery score: green = known (≥ 0.8), blue = in progress,
+ * orange = weak (< 0.3), grey = never shown. In Anki mode, also "N à réviser".
+ */
+function knownHtml({ known, total, split, due = 0 }) {
+  const { known: k = 0, learning = 0, weak = 0, unseen = total } = split || {};
   const pct = (n) => (total ? (n / total) * 100 : 0);
-  const seen = total - right - wrong;
-  return `<span class="known"><b>${known}/${total}</b> ${known < 2 ? 'connu' : 'connus'}</span>
-    <span class="known-bar" role="img" aria-label="${right} réussis, ${wrong} ratés ou difficiles, ${seen} jamais vus">
-      <span class="seg-right" style="width:${pct(right)}%"></span><span class="seg-wrong" style="width:${pct(wrong)}%"></span>
+  return `<span class="known"><b>${known}/${total}</b> ${known < 2 ? 'connu' : 'connus'}${due ? ` · <span class="due">${due} à réviser</span>` : ''}</span>
+    <span class="known-bar" role="img" aria-label="${k} connus, ${learning} en cours, ${weak} à retravailler, ${unseen} jamais vus">
+      <span class="seg-known" style="width:${pct(k)}%"></span><span class="seg-learning" style="width:${pct(learning)}%"></span><span class="seg-weak" style="width:${pct(weak)}%"></span>
     </span>`;
 }
 
@@ -177,7 +182,8 @@ async function route() {
 
 async function viewDecks(ctx) {
   const decks = (await db.getAll('decks')).sort(byName);
-  const rows = await Promise.all(decks.map(async (d) => ({ d, p: await deckProgress(d.id) })));
+  const studyMode = await db.getStudyMode();
+  const rows = await Promise.all(decks.map(async (d) => ({ d, p: await deckProgress(d.id, studyMode) })));
   if (!ctx.alive()) return;
 
   app.innerHTML = `
@@ -268,7 +274,8 @@ function bindDeckSelection(ids) {
 async function viewDeck(ctx, [id]) {
   const deck = await db.get('decks', Number(id));
   if (!deck) return location.replace('#/');
-  const [signs, progress] = await Promise.all([db.getAll('signs', 'deckId', deck.id), deckProgress(deck.id)]);
+  const studyMode = await db.getStudyMode();
+  const [signs, progress] = await Promise.all([db.getAll('signs', 'deckId', deck.id), deckProgress(deck.id, studyMode)]);
   if (!ctx.alive()) return;
   signs.sort(byName);
   const signById = new Map(signs.map((s) => [s.id, s]));
@@ -639,12 +646,17 @@ async function viewStudy(ctx, _args, params) {
     next();
   }
 
+  let timer = null;
+  cleanups.push(() => clearTimeout(timer));
+
   function next() {
+    clearTimeout(timer);
     const card = session.next();
     if (card) return show(card);
     current = null;
     player?.destroy();
     player = null;
+    if (session.kind === 'anki') return ankiDone();
     $('#card').innerHTML = session.queue.length
       ? `<div class="done"><div class="done-icon">🎉</div><h2>Session terminée</h2>
            <p>Vous avez révisé ${plural(session.answered, 'signe')}. Les signes ratés ont plus de chances de revenir à la prochaine session.</p></div>`
@@ -656,6 +668,19 @@ async function viewStudy(ctx, _args, params) {
     </div>`;
     $('#again')?.addEventListener('click', () => route());
     updateCounts();
+  }
+
+  function ankiDone() {
+    const due = session.nextLearningDue();
+    $('#card').innerHTML = due
+      ? `<div class="done"><div class="done-icon">⏳</div><h2>Bien joué !</h2>
+           <p>D'autres cartes dans ${formatDuration(due - Date.now())}. Gardez cet écran ouvert ou revenez plus tard.</p></div>`
+      : `<div class="done"><div class="done-icon">🎉</div><h2>${session.answered ? 'Terminé pour aujourd\'hui' : 'Rien à réviser pour le moment'}</h2>
+           <p>${session.answered ? `Vous avez répondu à ${plural(session.answered, 'carte')}.` : 'Revenez demain, ou augmentez « Nouveaux signes par jour » dans les Réglages.'}</p></div>`;
+    $('#actions').innerHTML = `<a class="btn block" href="${back}">Retour</a>`;
+    updateCounts();
+    // Learning signs come back after a few minutes: show them as soon as they are due.
+    if (due) timer = setTimeout(next, Math.max(1000, due - Date.now() + 500));
   }
 
   $('#undo').addEventListener('click', async () => {
@@ -681,7 +706,10 @@ async function viewStudy(ctx, _args, params) {
 }
 
 async function viewSettings(ctx) {
-  const [sessionSize, pendingCount] = await Promise.all([db.getSessionSize(), db.count('pending')]);
+  const [studyMode, sessionSize, newPerDay, pendingCount] = await Promise.all([
+    db.getStudyMode(), db.getSessionSize(), db.getNewPerDay(), db.count('pending'),
+  ]);
+  const fmt = (x) => String(x).replace('.', ',');
   if (!ctx.alive()) return;
   const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 
@@ -697,13 +725,28 @@ async function viewSettings(ctx) {
 
       <section>
         <h2>Étude</h2>
-        <label class="field"><span>Signes par session</span>
-          <input type="number" id="sessionSize" inputmode="numeric" min="1" max="999" value="${sessionSize}">
-        </label>
-        <p class="hint">Au début de chaque session, les signes sont tirés au hasard et chacun n'apparaît qu'une fois.
-          Plus un signe est difficile, plus il a de chances d'être tiré :
-          <b>À revoir</b> ×4, <b>Difficile</b> ×3, nouveau ou <b>Je sais</b> ×2, connu ×1
-          (connu = <b>Je sais</b> plus de 5 fois de suite).</p>
+        <div class="segmented" role="radiogroup" aria-label="Mode d'étude">
+          <button type="button" role="radio" data-study="random" aria-checked="${studyMode === 'random'}">Aléatoire</button>
+          <button type="button" role="radio" data-study="anki" aria-checked="${studyMode === 'anki'}">Anki</button>
+        </div>
+        <div id="randomOpts" ${studyMode === 'random' ? '' : 'hidden'}>
+          <label class="field"><span>Signes par session</span>
+            <input type="number" id="sessionSize" inputmode="numeric" min="1" max="999" value="${sessionSize}">
+          </label>
+          <p class="hint">Au début de chaque session, les signes sont tirés au hasard et chacun n'apparaît qu'une fois.
+            Les signes que vous maîtrisez le moins ont plus de chances d'être tirés.</p>
+        </div>
+        <div id="ankiOpts" ${studyMode === 'anki' ? '' : 'hidden'}>
+          <label class="field"><span>Nouveaux signes par jour</span>
+            <input type="number" id="newPerDay" inputmode="numeric" min="0" max="999" value="${newPerDay}">
+          </label>
+          <p class="hint">Répétition espacée : chaque signe revient à une date prévue, de plus en plus espacée quand vous le savez.
+            Un signe raté revient quelques minutes plus tard dans la même séance. La limite vaut pour tous les decks ensemble.</p>
+        </div>
+        <p class="hint"><b>Score de maîtrise</b> (dans les deux modes) : chaque signe commence à ${fmt(START_MASTERY)}.
+          <b>Je sais</b> +${fmt(MASTERY_DELTA[GOOD])}, <b>Difficile</b> +0, <b>À revoir</b> −${fmt(-MASTERY_DELTA[AGAIN])}.
+          Connu à partir de ${fmt(KNOWN_MASTERY)}. Barre : <span class="dot known"></span> connu · <span class="dot learning"></span> en cours ·
+          <span class="dot weak"></span> à retravailler (moins de ${fmt(START_MASTERY)}) · <span class="dot unseen"></span> jamais vu.</p>
       </section>
 
       <section>
@@ -749,6 +792,22 @@ async function viewSettings(ctx) {
     const ok = await navigator.storage.persist();
     toast(ok ? 'Les données seront conservées' : 'Le navigateur a refusé. Ajouter l\'app à l\'écran d\'accueil aide généralement.');
     if (ok) route();
+  });
+
+  $$('[data-study]').forEach((b) => b.addEventListener('click', async () => {
+    const m = b.dataset.study;
+    await db.setStudyMode(m);
+    $$('[data-study]').forEach((o) => o.setAttribute('aria-checked', o === b));
+    $('#randomOpts').hidden = m !== 'random';
+    $('#ankiOpts').hidden = m !== 'anki';
+    toast(m === 'anki' ? 'Mode Anki' : 'Mode aléatoire');
+  }));
+
+  $('#newPerDay').addEventListener('change', async (e) => {
+    const n = Math.max(0, Math.min(999, Math.round(Number(e.target.value) || 0)));
+    e.target.value = n;
+    await db.setNewPerDay(n);
+    toast('Enregistré');
   });
 
   $('#sessionSize').addEventListener('change', async (e) => {

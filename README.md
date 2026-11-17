@@ -4,7 +4,7 @@ Offline flashcards for learning sign language from your own videos. It runs on i
 
 - **Your videos become cards.** The file name is the sign name (`thank_you.mp4` → "Thank you").
 - **Two card types per sign:** *Sign → Word* (watch, recall the meaning) and *Word → Sign* (read, perform the sign, check with the video).
-- **Weighted random sessions** with three answers: **À revoir** (wrong), **Difficile** (hard), **Je sais** (right). Signs you get wrong come up more often.
+- **Two study modes:** weighted random sessions or Anki-style spaced repetition, with three answers: **À revoir** (wrong), **Difficile** (hard), **Je sais** (right). Signs you get wrong come up more often.
 - **One deck per collection.**
 - **Fully offline.** Videos and progress are stored on the phone and never uploaded anywhere.
 
@@ -42,19 +42,22 @@ Supported formats: `.mp4`, `.mov`, `.m4v` (best on iPhone); `.webm` only on rece
 
 ## Studying
 
-- When you tap **Étudier**, the app draws **20 signs** at random (change it in Réglages → Étude → *Signes par session*). Each sign is shown **once** per session, even if you get it wrong.
-- Each sign has a weight, based on your last answer. A sign with weight 4 is twice as likely to be drawn as one with weight 2:
+Each sign has a **mastery score** between 0 and 1. It starts at **0.3** and changes after every answer, in both study modes:
 
-  | Sign | Weight |
-  |---|---|
-  | Known (**Je sais** more than 5 times in a row) | 1 |
-  | Never shown, or last answer **Je sais** | 2 |
-  | Last answer **Difficile** | 3 |
-  | Last answer **À revoir** | 4 |
+| Answer | Score |
+|---|---|
+| **Je sais** | +0.1 |
+| **Difficile** | +0 |
+| **À revoir** | −0.2 |
 
-  A **Difficile** or **À revoir** resets the Je sais count. Known signs still come back now and then.
-- Each deck shows how many signs you know, e.g. **10/24 connus**.
-- Choose **Les deux / Signe → Mot / Mot → Signe** on the home or deck screen. A sign has one weight for both directions; with *Les deux* the direction is picked at random.
+A sign is **connu** from **0.8** (five Je sais from new, not necessarily in a row). Each deck shows **X/Y connus** and a bar: green = connu, blue = in progress, orange = needs work (below 0.3), grey = never seen.
+
+Choose the study mode in **Réglages → Étude**:
+
+- **Aléatoire** (default): when you tap **Étudier**, the app draws **20 signs** (*Signes par session*). Each sign is shown **once** per session. The chance of being drawn is **(1.1 − score)²**: a sign at 0 is about twice as likely as a new one, a known sign about 7× less likely, and even a fully mastered sign can still come up.
+- **Anki**: spaced repetition. Each sign comes back on a due date that gets further away when you know it (1 day, then about 2.5× longer each time; shorter with Difficile). A missed sign comes back a few minutes later in the same session. New signs are limited per day (*Nouveaux signes par jour*, 10 by default, shared by all decks). The home page shows how many signs are **à réviser**.
+
+Choose **Les deux / Signe → Mot / Mot → Signe** on the home or deck screen. A sign has one score and one schedule for both directions; with *Les deux* the direction is picked at random.
 - Videos loop. Use **Speed** for slow motion (0.75× / 0.5×) and tap the video to pause.
 - ↶ undoes the last answer. On a computer: Space = show answer / Je sais, 1–3 = answer, Z = undo.
 
@@ -72,8 +75,9 @@ Upload the changed files to the GitHub repository again. The app updates in the 
 
 ```sh
 python3 -m http.server 8000   # then open http://localhost:8000
-node tests/progress.test.mjs  # weights, draw and session tests
+node tests/progress.test.mjs  # score, weights, draw and random sessions
+node tests/srs.test.mjs       # Anki scheduling and Anki sessions
 node tests/zip.test.mjs       # zip import tests
 ```
 
-No build step and no dependencies. The code is in `js/`: `app.js` (screens), `db.js` (IndexedDB storage), `progress.js` (weights and weighted draw), `study.js` (session), `importer.js`, `zip.js` (zip reader), `backup.js`.
+No build step and no dependencies. The code is in `js/`: `app.js` (screens), `db.js` (IndexedDB storage), `progress.js` (mastery score and weighted draw), `srs.js` (Anki scheduling), `study.js` (both session types), `importer.js`, `zip.js` (zip reader), `backup.js`.

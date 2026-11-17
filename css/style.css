@@ -235,8 +235,12 @@ input:focus, select:focus, .btn:focus-visible { outline: 2px solid var(--primary
 .known b { color: var(--good); }
 .known-bar { display: flex; height: 6px; margin-top: 0.3rem; border-radius: 3px; background: var(--border); overflow: hidden; }
 .known-bar > span { height: 100%; }
-.known-bar .seg-right { background: var(--good); }
-.known-bar .seg-wrong { background: var(--hard); }
+.known-bar .seg-known, .dot.known { background: var(--good); }
+.known-bar .seg-learning, .dot.learning { background: var(--new); }
+.known-bar .seg-weak, .dot.weak { background: var(--hard); }
+.dot { display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; vertical-align: 0.05em; }
+.dot.unseen { background: var(--border); }
+.known .due { color: var(--primary); font-weight: 650; }
 .stat-row .known-bar { flex: 1; margin: 0 0 0 0.75rem; }
 
 .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.25rem 0; font-size: 1.1rem; }

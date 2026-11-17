@@ -1,10 +1,10 @@
 // Export / import study progress as JSON (videos are not included).
 import * as db from './db.js';
-import { fromLegacyCards, progressOf } from './progress.js';
+import { fromLegacyCards, progressOf, masteryOf } from './progress.js';
 
 export async function buildExport() {
-  const [decks, signs, pending, sessionSize] = await Promise.all([
-    db.getAll('decks'), db.getAll('signs'), db.getAll('pending'), db.getSessionSize(),
+  const [decks, signs, pending, sessionSize, studyMode, newPerDay] = await Promise.all([
+    db.getAll('decks'), db.getAll('signs'), db.getAll('pending'), db.getSessionSize(), db.getStudyMode(), db.getNewPerDay(),
   ]);
   const deckById = new Map(decks.map((d) => [d.id, d]));
   return {
@@ -12,11 +12,13 @@ export async function buildExport() {
     version: 2,
     exportedAt: new Date().toISOString(),
     sessionSize,
+    studyMode,
+    newPerDay,
     decks: decks.map((d) => ({ name: d.name })),
     signs: [
       ...signs
         .filter((s) => deckById.has(s.deckId))
-        .map((s) => ({ deck: deckById.get(s.deckId).name, sign: s.name, ...progressOf(s) })),
+        .map((s) => ({ deck: deckById.get(s.deckId).name, sign: s.name, ...progressOf(s), mastery: masteryOf(progressOf(s)), ...(s.srs ? { srs: s.srs } : {}) })),
       // Keep progress that was imported earlier but whose video hasn't been re-added yet.
       ...pending.filter((p) => p.key.endsWith('|sign')).map((p) => p.progress),
     ],
@@ -42,8 +44,10 @@ export async function shareOrDownload(data) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-const PROGRESS_FIELDS = ['lastRating', 'streak', 'reviews', 'lastReview'];
-const pick = (o) => Object.fromEntries(PROGRESS_FIELDS.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
+const PROGRESS_FIELDS = ['mastery', 'lastRating', 'streak', 'reviews', 'lastReview'];
+const validSrs = (x) => (x && typeof x === 'object' && typeof x.state === 'string' ? x : undefined);
+// Backups from before the mastery score get it computed from their last answer.
+const pick = (o) => ({ ...Object.fromEntries(PROGRESS_FIELDS.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])), mastery: masteryOf(o) });
 
 /** Old backups (version 1) stored one entry per direction: merge them into one entry per sign. */
 function signEntries(json) {
@@ -68,6 +72,8 @@ export async function importProgress(json) {
     if (d.name && !(await db.findDeckByName(d.name))) await db.createDeck(d.name);
   }
   if (Number.isFinite(json.sessionSize)) await db.setSessionSize(json.sessionSize);
+  if (db.STUDY_MODES.includes(json.studyMode)) await db.setStudyMode(json.studyMode);
+  if (Number.isFinite(json.newPerDay)) await db.setNewPerDay(json.newPerDay);
 
   const [decks, signs] = await Promise.all([db.getAll('decks'), db.getAll('signs')]);
   const deckById = new Map(decks.map((d) => [d.id, d]));
@@ -84,10 +90,12 @@ export async function importProgress(json) {
       const key = db.pendingKey(e.deck, e.sign, 'sign');
       const sign = signByKey.get(key);
       if (sign) {
-        s.signs.put({ ...sign, progress: { ...progressOf(sign), ...pick(e) } });
+        const srs = validSrs(e.srs);
+        s.signs.put({ ...sign, progress: { ...progressOf(sign), ...pick(e) }, ...(srs ? { srs } : {}) });
         updated++;
       } else {
-        s.pending.put({ key, progress: { deck: e.deck, sign: e.sign, ...pick(e) } });
+        const srs = validSrs(e.srs);
+        s.pending.put({ key, progress: { deck: e.deck, sign: e.sign, ...pick(e), ...(srs ? { srs } : {}) } });
         waiting++;
       }
     }
